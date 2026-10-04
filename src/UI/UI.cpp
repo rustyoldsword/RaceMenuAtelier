@@ -130,6 +130,7 @@ namespace RMA::UI
 			bool        toolsOpen{ false };
 			char        presetName[80]{};
 			std::string presetInfoOpen;
+			std::string presetFolder;  // the open preset folder, "" for the root, else "A/B/"
 			char        bodySlideName[80]{};
 			bool        bodySlideHimbo{ false };
 
@@ -470,6 +471,9 @@ namespace RMA::UI
 
 			for (int i = 0; i < static_cast<int>(a_model.entries.size()); ++i) {
 				const auto& e = a_model.entries[i];
+				if (e.control == Control::Sex) {
+					continue;  // shown in the header
+				}
 				const bool  filteredBySex = (e.control == Control::Slider || e.control == Control::Stepper) && SexFiltered(e, a_model);
 				const bool  changed = e.IsChanged();
 				if (changed) {
@@ -1575,6 +1579,17 @@ namespace RMA::UI
 		// ------------------------------------------------------------------
 		// editor window
 
+		// the sex switch lives in the header, not in the slider list
+		Entry* SexEntry(Model& a_model)
+		{
+			for (auto& e : a_model.entries) {
+				if (e.control == Control::Sex && e.enabled) {
+					return &e;
+				}
+			}
+			return nullptr;
+		}
+
 		void RenderHeader(Model& a_model)
 		{
 			const float u = U();
@@ -1582,15 +1597,33 @@ namespace RMA::UI
 			const auto  pos = im::GetCursorScreenPos();
 			const float width = im::GetContentRegionAvail().x;
 
-			W::SmallText(list, pos, Color::Gold, "RACEMENU ATELIER", 0.85f);
-			std::string who = a_model.player.race;
-			if (a_model.player.sex >= 0) {
-				who += who.empty() ? "" : "  \xC2\xB7  ";
-				who += a_model.player.sex == 1 ? "Female" : "Male";
+			// title, the sex switch right of it, the race on the far right
+			const float sexH = std::floor(u * 1.35f);
+			const auto  titleSize = W::SmallTextSize("RACEMENU ATELIER", 0.85f);
+			W::SmallText(list, { pos.x, pos.y + (sexH - titleSize.y) * 0.5f }, Color::Gold, "RACEMENU ATELIER", 0.85f);
+			float rowH = titleSize.y;
+			float leftEnd = pos.x + titleSize.x;
+			if (auto* sex = SexEntry(a_model)) {
+				const int   cur = static_cast<int>(std::lround(sex->position));
+				const float sexW = std::floor(u * 4.6f);
+				float       x = pos.x + titleSize.x + u * 0.9f;
+				im::SetCursorScreenPos({ x, pos.y });
+				if (W::Button("##male", Icon::Mars, "Male", { sexW, sexH }, false, cur == 0) && cur != 0) {
+					CommitValue(a_model, *sex, 0.0);
+				}
+				x += sexW + u * 0.25f;
+				im::SetCursorScreenPos({ x, pos.y });
+				if (W::Button("##female", Icon::Venus, "Female", { sexW, sexH }, false, cur == 1) && cur != 1) {
+					CommitValue(a_model, *sex, 1.0);
+				}
+				rowH = sexH;
+				leftEnd = x + sexW;
 			}
-			const auto whoSize = W::SmallTextSize(who.c_str(), 0.85f);
-			W::SmallText(list, { pos.x + width - whoSize.x, pos.y }, Color::TextDim, who.c_str(), 0.85f);
-			im::Dummy({ width, whoSize.y + u * 0.35f });
+			const auto race = W::Ellipsize(a_model.player.race, pos.x + width - leftEnd - u * 0.8f);
+			const auto  raceSize = W::SmallTextSize(race.c_str(), 0.85f);
+			W::SmallText(list, { pos.x + width - raceSize.x, pos.y + (rowH - raceSize.y) * 0.5f }, Color::TextDim, race.c_str(), 0.85f);
+			im::SetCursorScreenPos(pos);
+			im::Dummy({ width, rowH + u * 0.35f });
 
 			// name and Done
 			const float doneW = u * 6.5f;
@@ -1949,7 +1982,25 @@ namespace RMA::UI
 			}
 			im::EndDisabled();
 
-			const auto  count = a_model.presetFiles.size();
+			// one folder level at a time: the files in it, and its subfolders as rows to open
+			std::map<std::string, std::size_t> folders;  // subfolder -> presets anywhere inside
+			std::vector<const std::string*>    files;
+			for (const auto& file : a_model.presetFiles) {
+				if (!file.starts_with(s.presetFolder)) {
+					continue;
+				}
+				const auto rest = std::string_view(file).substr(s.presetFolder.size());
+				if (const auto slash = rest.find('/'); slash != std::string_view::npos) {
+					++folders[std::string(rest.substr(0, slash))];
+				} else {
+					files.push_back(&file);
+				}
+			}
+			if (!s.presetFolder.empty() && folders.empty() && files.empty() && a_model.presetsLoaded) {
+				s.presetFolder.clear();  // the folder is gone; the next frame shows the root
+			}
+
+			const auto  count = (s.presetFolder.empty() ? 0 : 1) + folders.size() + files.size();
 			const float rowH = im::GetFrameHeight() + u * 0.2f;
 			float       listH = std::min<float>(static_cast<float>(std::max<std::size_t>(count, 1)), 9.0f) * rowH + u * 0.4f;
 			if (!s.presetInfoOpen.empty()) {
@@ -1961,25 +2012,54 @@ namespace RMA::UI
 				im::TextColored(ToVec4(Color::TextFaint), "No presets in SKSE\\Plugins\\CharGen\\Presets");
 			}
 			const float b = im::GetFrameHeight();
-			for (const auto& file : a_model.presetFiles) {
+			// a clickable row with an icon, a name and an optional faint note on the right
+			const auto folderRow = [&](const char* a_id, const char* a_icon, const std::string& a_text, const std::string& a_note, const char* a_tip) {
+				auto*       list = im::GetWindowDrawList();
+				const auto  pos = im::GetCursorScreenPos();
+				const float width = im::GetContentRegionAvail().x;
+				const bool  clicked = im::InvisibleButton(a_id, { width, b });
+				const bool  hovered = im::IsItemHovered();
+				if (hovered) {
+					dl::AddRectFilled(list, pos, pos + ImVec2{ width, b }, Color::RowHover, Round(u * 0.25f), 0);
+					W::Tooltip(a_tip);
+				}
+				DrawIcon(list, { pos.x + u * 0.8f, pos.y + b * 0.5f }, a_icon, Color::Gold);
+				const auto noteSize = W::SmallTextSize(a_note.c_str(), 0.8f);
+				const float textX = pos.x + u * 1.7f;
+				const auto name = W::Ellipsize(a_text, pos.x + width - noteSize.x - u * 1.2f - textX);
+				dl::AddText(list, { textX, pos.y + (b - im::GetTextLineHeight()) * 0.5f }, hovered ? Color::GoldBright : Color::Text, name.c_str());
+				W::SmallText(list, { pos.x + width - noteSize.x - u * 0.5f, pos.y + (b - noteSize.y) * 0.5f }, Color::TextFaint, a_note.c_str(), 0.8f);
+				return clicked;
+			};
+			if (!s.presetFolder.empty()) {
+				const auto shown = s.presetFolder.substr(0, s.presetFolder.size() - 1);
+				if (folderRow("##up", Icon::ChevronLeft, shown, "..", "Back to the folder above")) {
+					const auto cut = shown.find_last_of('/');
+					s.presetFolder = cut == std::string::npos ? std::string{} : shown.substr(0, cut + 1);
+					s.presetInfoOpen.clear();
+				}
+			}
+			for (const auto& [folder, inside] : folders) {
+				im::PushID(folder.c_str());
+				if (folderRow("##folder", Icon::Folder, folder, std::to_string(inside), "Open this folder")) {
+					s.presetFolder += folder + "/";
+					s.presetInfoOpen.clear();
+				}
+				im::PopID();
+			}
+			for (const auto* path : files) {
+				const auto& file = *path;
 				im::PushID(file.c_str());
 				auto*       list = im::GetWindowDrawList();
 				const auto  pos = im::GetCursorScreenPos();
 				const float width = im::GetContentRegionAvail().x;
-				const auto  slash = file.find_last_of('/');
-				const auto  folder = slash == std::string::npos ? std::string{} : file.substr(0, slash + 1);
 				const auto  stem = Text::FileStem(file);
 				const bool  hovered = im::IsMouseHoveringRect(pos, pos + ImVec2{ width, b });
 				if (hovered) {
 					dl::AddRectFilled(list, pos, pos + ImVec2{ width, b }, Color::RowHover, Round(u * 0.25f), 0);
 				}
 				const float textW = width - b * 2.0f - u * 1.2f;
-				float       x = pos.x + u * 0.3f;
-				if (!folder.empty()) {
-					const auto fs = W::SmallTextSize(folder.c_str(), 0.8f);
-					W::SmallText(list, { x, pos.y + (b - fs.y) * 0.5f }, Color::TextFaint, folder.c_str(), 0.8f);
-					x += std::min(fs.x, textW * 0.4f);
-				}
+				const float x = pos.x + u * 0.3f;
 				const auto name = W::Ellipsize(stem, pos.x + u * 0.3f + textW - x);
 				dl::AddText(list, { x, pos.y + (b - im::GetTextLineHeight()) * 0.5f }, Color::Text, name.c_str());
 				im::SetCursorScreenPos({ pos.x + width - b * 2.0f - u * 0.2f, pos.y });
