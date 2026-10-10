@@ -181,6 +181,13 @@ namespace RMA::UI
 		inline constexpr Glyph Bug{ 0xF188 };
 		inline constexpr Glyph Feather{ 0xF56B };
 
+		// picture-only icons (private-use code points, no font glyph): each has a picture in
+		// Data\Interface\RaceMenuAtelier\icons and a Font Awesome glyph to fall back to
+		inline constexpr Glyph Load{ 0xE900 };
+		inline constexpr Glyph Scene{ 0xE901 };
+		inline constexpr Glyph Emblem{ 0xE902 };
+		inline constexpr Glyph Gem{ 0xE903 };
+
 		// race crests
 		inline constexpr Glyph Dragon{ 0xF6D5 };
 		inline constexpr Glyph Wizard{ 0xF6E8 };
@@ -216,6 +223,9 @@ namespace RMA::UI
 
 	void PushIconFont();
 	void PopIconFont();
+	// Icons are pictures (white, tinted with the colour) when the icon has one and the file loads, otherwise the
+	// Font Awesome glyph. Sizes follow the icon font, so the two look the same in the layout.
 	ImVec2 IconSize(const char* a_icon);
 	void   DrawIcon(ImGuiMCP::ImDrawList* a_list, ImVec2 a_center, const char* a_icon, ImU32 a_color);
+	void   DrawIconSized(ImGuiMCP::ImDrawList* a_list, ImVec2 a_center, const char* a_icon, ImU32 a_color, float a_size);
 }

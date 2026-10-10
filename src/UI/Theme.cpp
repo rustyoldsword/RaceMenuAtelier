@@ -197,19 +197,138 @@ namespace RMA::UI
 		FontAwesome::Pop();
 	}
 
+	namespace
+	{
+		struct Picture
+		{
+			const char* glyph;     // the Icon:: constant it stands for
+			const char* file;      // icons\<file>_<size>.png
+			const char* fallback;  // drawn when the picture is missing
+		};
+
+		// one picture per icon; tools\slice_icons.py writes the files
+		const std::vector<Picture>& Pictures()
+		{
+			static const std::vector<Picture> list{
+				{ Icon::Users, "cat_race", Icon::Users }, { Icon::Person, "cat_body", Icon::Person },
+				{ Icon::User, "cat_head", Icon::User }, { Icon::Face, "cat_face", Icon::Face },
+				{ Icon::Eye, "cat_eyes", Icon::Eye }, { Icon::Brow, "cat_brows", Icon::Brow },
+				{ Icon::Mouth, "cat_mouth", Icon::Mouth }, { Icon::Scissors, "cat_hair", Icon::Scissors },
+				{ Icon::Palette, "cat_colors", Icon::Palette }, { Icon::Brush, "cat_warpaint", Icon::Brush },
+				{ Icon::SprayCan, "cat_bodypaint", Icon::SprayCan }, { Icon::Hand, "cat_handpaint", Icon::Hand },
+				{ Icon::Feet, "cat_feetpaint", Icon::Feet }, { Icon::Mask, "cat_facepaint", Icon::Mask },
+				{ Icon::Layers, "cat_overlays", Icon::Layers }, { Icon::Sliders, "cat_custom", Icon::Sliders },
+				{ Icon::Grid, "cat_all", Icon::Grid },
+				{ Icon::Undo, "undo", Icon::Undo }, { Icon::Redo, "redo", Icon::Redo },
+				{ Icon::Search, "search", Icon::Search }, { Icon::Filter, "changed", Icon::Filter },
+				{ Icon::Columns, "sidepanel", Icon::Columns }, { Icon::Gear, "options", Icon::Gear },
+				{ Icon::Check, "done", Icon::Check }, { Icon::Close, "cancel", Icon::Close },
+				{ Icon::Reset, "reset", Icon::Reset }, { Icon::Save, "save", Icon::Save },
+				{ Icon::Load, "load", Icon::Folder }, { Icon::Folder, "folder", Icon::Folder },
+				{ Icon::RotateLeft, "turn_left", Icon::RotateLeft }, { Icon::RotateRight, "turn_right", Icon::RotateRight },
+				{ Icon::ZoomIn, "zoom_face", Icon::ZoomIn }, { Icon::ZoomOut, "zoom_body", Icon::ZoomOut },
+				{ Icon::Sun, "light_on", Icon::Sun }, { Icon::Moon, "light_off", Icon::Moon },
+				{ Icon::Shirt, "undress", Icon::Shirt }, { Icon::Snowflake, "freeze", Icon::Snowflake },
+				{ Icon::Scene, "pose_play", Icon::Person }, { Icon::Stop, "pose_stop", Icon::Stop },
+				{ Icon::Mars, "male", Icon::Mars }, { Icon::Venus, "female", Icon::Venus },
+				{ Icon::Info, "details", Icon::Info }, { Icon::Export, "bodyslide", Icon::Export },
+				{ Icon::Wrench, "racemenu", Icon::Wrench }, { Icon::Wand, "sculpt", Icon::Wand },
+				{ Icon::Bug, "diagnostic", Icon::Bug }, { Icon::Refresh, "reread", Icon::Refresh },
+				{ Icon::Emblem, "emblem", Icon::Feather }, { Icon::Gem, "gem", Icon::Dot },
+			};
+			return list;
+		}
+
+		const Picture* FindPicture(const char* a_icon)
+		{
+			if (!a_icon) {
+				return nullptr;
+			}
+			for (const auto& p : Pictures()) {
+				if (std::strcmp(p.glyph, a_icon) == 0) {
+					return &p;
+				}
+			}
+			return nullptr;
+		}
+
+		// the smallest written size that is not smaller than the drawn one, so the picture is only ever shrunk
+		int PictureSize(float a_px)
+		{
+			for (const int size : { 24, 32, 48, 64, 96 }) {
+				if (static_cast<float>(size) >= a_px) {
+					return size;
+				}
+			}
+			return 96;
+		}
+
+		// loaded on first use through the framework (WIC reads the PNG from the virtual Data folder); a file
+		// that fails to load is remembered as missing and the glyph is drawn instead
+		ImGuiMCP::ImTextureID PictureTexture(const Picture& a_picture, float a_px)
+		{
+			static std::unordered_map<std::string, ImGuiMCP::ImTextureID> cache;
+			const auto key = std::format("{}_{}", a_picture.file, PictureSize(a_px));
+			auto       it = cache.find(key);
+			if (it == cache.end()) {
+				const auto path = std::format("Data/Interface/RaceMenuAtelier/icons/{}.png", key);
+				auto       texture = SKSEMenuFramework::LoadTexture(path);
+				if (!texture) {
+					logger::warn("icon {} could not be loaded; the font glyph is used", path);
+				}
+				it = cache.emplace(key, texture).first;
+			}
+			return it->second;
+		}
+
+		// pictures take the square the icon font gives a glyph, a little larger since they have no side bearing
+		float IconPixels()
+		{
+			PushIconFont();
+			const float h = ImGuiMCP::GetTextLineHeight();
+			PopIconFont();
+			return std::round(h * 1.1f);
+		}
+
+		void DrawGlyph(ImGuiMCP::ImDrawList* a_list, ImVec2 a_center, const char* a_icon, ImU32 a_color)
+		{
+			PushIconFont();
+			const auto size = ImGuiMCP::CalcTextSize(a_icon);
+			ImGuiMCP::ImDrawListManager::AddText(a_list, { std::floor(a_center.x - size.x * 0.5f), std::floor(a_center.y - size.y * 0.5f) }, a_color, a_icon);
+			PopIconFont();
+		}
+	}
+
 	ImVec2 IconSize(const char* a_icon)
 	{
+		if (const auto* picture = FindPicture(a_icon)) {
+			const float px = IconPixels();
+			if (PictureTexture(*picture, px)) {
+				return { px, px };
+			}
+			a_icon = picture->fallback;
+		}
 		PushIconFont();
 		const auto size = ImGuiMCP::CalcTextSize(a_icon);
 		PopIconFont();
 		return size;
 	}
 
+	void DrawIconSized(ImGuiMCP::ImDrawList* a_list, ImVec2 a_center, const char* a_icon, ImU32 a_color, float a_size)
+	{
+		if (const auto* picture = FindPicture(a_icon)) {
+			if (const auto texture = PictureTexture(*picture, a_size)) {
+				const ImVec2 min{ std::round(a_center.x - a_size * 0.5f), std::round(a_center.y - a_size * 0.5f) };
+				ImGuiMCP::ImDrawListManager::AddImage(a_list, texture, min, { min.x + a_size, min.y + a_size }, { 0.0f, 0.0f }, { 1.0f, 1.0f }, a_color);
+				return;
+			}
+			a_icon = picture->fallback;
+		}
+		DrawGlyph(a_list, a_center, a_icon, a_color);
+	}
+
 	void DrawIcon(ImGuiMCP::ImDrawList* a_list, ImVec2 a_center, const char* a_icon, ImU32 a_color)
 	{
-		PushIconFont();
-		const auto size = ImGuiMCP::CalcTextSize(a_icon);
-		ImGuiMCP::ImDrawListManager::AddText(a_list, { std::floor(a_center.x - size.x * 0.5f), std::floor(a_center.y - size.y * 0.5f) }, a_color, a_icon);
-		PopIconFont();
+		DrawIconSized(a_list, a_center, a_icon, a_color, IconPixels());
 	}
 }

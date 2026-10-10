@@ -21,10 +21,15 @@ New-Item -ItemType Directory -Force "$stage\SKSE\Plugins", "$stage\docs" | Out-N
 Copy-Item $dll "$stage\SKSE\Plugins\"
 Copy-Item (Join-Path $root 'dist_template\SKSE\Plugins\RaceMenuAtelier.ini') "$stage\SKSE\Plugins\"
 Copy-Item (Join-Path $root 'dist_template\docs\RaceMenu Atelier__README.txt') "$stage\docs\"
+# icons: tools\slice_icons.py writes 49 pictures x 5 sizes
+Copy-Item (Join-Path $root 'dist_template\Interface') $stage -Recurse
+$icons = Get-ChildItem "$stage\Interface\RaceMenuAtelier\icons" -File -Filter *.png
+if ($icons.Count -ne 245) { throw "expected 245 icon files, staged $($icons.Count) - run python tools\slice_icons.py" }
 
 $files = Get-ChildItem $stage -Recurse -File
-if ($files.Count -ne 3) { throw "expected 3 files, staged $($files.Count)" }
-$files | Select-Object @{ n = 'file'; e = { $_.FullName.Substring($stage.Length) } }, Length | Format-Table -AutoSize | Out-String -Width 200
+if ($files.Count -ne 248) { throw "expected 248 files, staged $($files.Count)" }
+$files | Where-Object { $_.Extension -ne '.png' } | Select-Object @{ n = 'file'; e = { $_.FullName.Substring($stage.Length) } }, Length | Format-Table -AutoSize | Out-String -Width 200
+"plus $($icons.Count) icons"
 
 if ($NoArchive) { return }
 $sevenZip = @('C:\Program Files\7-Zip\7z.exe', 'C:\Program Files (x86)\7-Zip\7z.exe') | Where-Object { Test-Path $_ } | Select-Object -First 1

@@ -905,7 +905,7 @@ namespace RMA::UI
 			const bool   clicked = im::InvisibleButton("##texture", { width, g.ctrl });
 			const bool   hovered = im::IsItemHovered();
 			dl::AddRectFilled(list, pos, pos + ImVec2{ width, g.ctrl }, hovered ? Color::FrameHover : Color::Frame, Round(g.u * 0.25f), 0);
-			DrawIcon(list, pos + ImVec2{ g.u * 0.8f, g.ctrl * 0.5f }, Icon::Brush, Color::Gold);
+			DrawIcon(list, pos + ImVec2{ g.u * 0.8f, g.ctrl * 0.5f }, Icon::Palette, Color::Gold);
 			const auto text = W::Ellipsize(stem, width - g.u * 3.5f);
 			const auto ts = im::CalcTextSize(text.c_str());
 			dl::AddText(list, pos + ImVec2{ g.u * 1.6f, (g.ctrl - ts.y) * 0.5f }, a_changed ? Color::GoldBright : Color::Text, text.c_str());
@@ -1600,13 +1600,16 @@ namespace RMA::UI
 			// title, the sex switch right of it, the race on the far right
 			const float sexH = std::floor(u * 1.35f);
 			const auto  titleSize = W::SmallTextSize("RACEMENU ATELIER", 0.85f);
-			W::SmallText(list, { pos.x, pos.y + (sexH - titleSize.y) * 0.5f }, Color::Gold, "RACEMENU ATELIER", 0.85f);
-			float rowH = titleSize.y;
-			float leftEnd = pos.x + titleSize.x;
+			const float emblem = sexH;
+			DrawIconSized(list, { pos.x + emblem * 0.5f, pos.y + sexH * 0.5f }, Icon::Emblem, Color::Gold, emblem);
+			const float titleX = pos.x + emblem + u * 0.35f;
+			W::SmallText(list, { titleX, pos.y + (sexH - titleSize.y) * 0.5f }, Color::Gold, "RACEMENU ATELIER", 0.85f);
+			float rowH = sexH;
+			float leftEnd = titleX + titleSize.x;
 			if (auto* sex = SexEntry(a_model)) {
 				const int   cur = static_cast<int>(std::lround(sex->position));
 				const float sexW = std::floor(u * 4.6f);
-				float       x = pos.x + titleSize.x + u * 0.9f;
+				float       x = leftEnd + u * 0.9f;
 				im::SetCursorScreenPos({ x, pos.y });
 				if (W::Button("##male", Icon::Mars, "Male", { sexW, sexH }, false, cur == 0) && cur != 0) {
 					CommitValue(a_model, *sex, 0.0);
@@ -1616,7 +1619,6 @@ namespace RMA::UI
 				if (W::Button("##female", Icon::Venus, "Female", { sexW, sexH }, false, cur == 1) && cur != 1) {
 					CommitValue(a_model, *sex, 1.0);
 				}
-				rowH = sexH;
 				leftEnd = x + sexW;
 			}
 			const auto race = W::Ellipsize(a_model.player.race, pos.x + width - leftEnd - u * 0.8f);
@@ -1736,7 +1738,7 @@ namespace RMA::UI
 				const auto  ls = im::CalcTextSize(label.c_str());
 				dl::AddText(list, pos + ImVec2{ u * 1.85f, (h - ls.y) * 0.5f }, a_selected ? Color::Text : hovered ? Color::Text : Color::TextDim, label.c_str());
 				if (a_changed > 0) {
-					dl::AddCircleFilled(list, pos + ImVec2{ width - u * 0.45f, h * 0.5f }, u * 0.16f, Color::Gold, 12);
+					DrawIconSized(list, pos + ImVec2{ width - u * 0.5f, h * 0.5f }, Icon::Gem, Color::Gold, std::round(u * 0.6f));
 				}
 				if (hovered && label != a_label) {
 					W::Tooltip(a_label.c_str());
@@ -1862,7 +1864,7 @@ namespace RMA::UI
 			}
 			im::SetCursorScreenPos({ pos.x + width - b, pos.y });
 			im::BeginDisabled(s.changedTotal == 0);
-			if (W::IconButton("##resetall", Icon::Refresh, "Reset every changed slider of this session")) {
+			if (W::IconButton("##resetall", Icon::Reset, "Reset every changed slider of this session")) {
 				s.openResetAll = true;
 			}
 			im::EndDisabled();
@@ -2071,7 +2073,7 @@ namespace RMA::UI
 					}
 				}
 				im::SameLine(0.0f, u * 0.2f);
-				if (W::IconButton("##load", Icon::Folder, "Load this preset")) {
+				if (W::IconButton("##load", Icon::Load, "Load this preset")) {
 					s.loadPreset = file;
 					s.openLoadPreset = true;
 				}
@@ -2220,7 +2222,7 @@ namespace RMA::UI
 			}
 			im::SetCursorScreenPos({ pos.x, pos.y + u * 1.2f });
 
-			if (W::Collapsible("##scene", Icon::Person, "Scene", s.sceneOpen)) {
+			if (W::Collapsible("##scene", Icon::Scene, "Scene", s.sceneOpen)) {
 				SceneSection(a_model);
 			}
 			if (W::Collapsible("##presets", Icon::Folder, "Presets", s.presetsOpen)) {
@@ -2362,9 +2364,7 @@ namespace RMA::UI
 			const ImVec2 min{ (io->DisplaySize.x - w) * 0.5f, u * 0.8f };
 			dl::AddRectFilled(list, min, min + ImVec2{ w, h }, Color::Window, h * 0.5f, 0);
 			dl::AddRect(list, min, min + ImVec2{ w, h }, Color::BorderStrong, h * 0.5f, 0, 1.0f);
-			PushIconFont();
-			dl::AddText(list, im::GetFont(), u, min + ImVec2{ u * 0.9f, (h - u) * 0.5f }, Color::Gold, a_icon);
-			PopIconFont();
+			DrawIconSized(list, min + ImVec2{ u * 1.4f, h * 0.5f }, a_icon, Color::Gold, std::round(u * 1.1f));
 			dl::AddText(list, im::GetFont(), u, min + ImVec2{ u * 2.2f, (h - text.y) * 0.5f }, Color::Text, a_text.c_str());
 		}
 
