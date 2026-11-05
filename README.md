@@ -34,6 +34,7 @@ Requires Visual Studio 2022 (C++ workload) and [xmake](https://xmake.io) 3.0+.
 ```bat
 git clone --recursive https://github.com/rustyoldsword/RaceMenuAtelier.git
 cd RaceMenuAtelier
+git -C lib/CommonLibSSE-NG apply ../../patches/CommonLibSSE-NG-TESObjectREFR-Unk_8C.patch
 xmake f -m releasedbg --skyrim_vr=n
 xmake build RaceMenuAtelier
 powershell -ExecutionPolicy Bypass -File tools\package.ps1
@@ -41,6 +42,10 @@ powershell -ExecutionPolicy Bypass -File tools\package.ps1
 
 `tools\package.ps1` stages `dist\RaceMenu Atelier\` in the Data layout and packs a `.7z` when 7-Zip
 is installed. Set `RMA_DEPLOY_DIR` to a mod folder to have every build copied there.
+
+The patch removes `TESObjectREFR::Unk_8C`, a declaration CommonLibSSE-NG 4.39.2 carries that is not a
+virtual slot on SE/AE: without it every `TESObjectREFR` virtual after slot 0x8B (`Get3D` among them) is
+called one slot off. Released DLLs from 1.1.0 on are built with it.
 
 ## Settings
 

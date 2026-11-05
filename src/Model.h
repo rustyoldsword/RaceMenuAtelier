@@ -35,6 +35,16 @@ namespace RMA
 		Paint
 	};
 
+	// body morph sliders that BodySlide also knows: the morph name after the
+	// callback prefix is the BodySlide slider name, 1.0 is 100%
+	enum class Body
+	{
+		None,
+		CBBE,
+		HIMBO,
+		UBE
+	};
+
 	struct Category
 	{
 		std::string   raw;
@@ -94,6 +104,8 @@ namespace RMA
 		bool        hasColor{ false };
 		bool        custom{ false };
 		bool        canOverdrive{ false };
+		Body        body{ Body::None };
+		std::string morphName;  // BodySlide slider name when body != None
 
 		// session
 		double        initialPosition{ 0.0 };
@@ -145,6 +157,18 @@ namespace RMA
 		std::vector<std::string> missing;
 		std::vector<std::string> headParts;  // "Hair - Plugin.esp"
 		std::vector<std::string> tints;      // texture paths
+	};
+
+	// one <Preset> of a BodySlide SliderPresets xml
+	struct BodySlidePreset
+	{
+		std::string name;
+		std::string file;  // file name inside SliderPresets
+		std::string set;
+		Body        body{ Body::None };
+		std::string search;
+		// slider -> value at weight 0 (small) and 100 (big), BodySlide percent
+		std::vector<std::tuple<std::string, double, double>> sliders;
 	};
 
 	struct HistoryStep
@@ -213,6 +237,8 @@ namespace RMA
 		double                                             headPartSlider{ -1.0 };
 		std::vector<HeadPart>                              headParts;
 		bool                                               headPartsLoaded{ false };
+		std::vector<BodySlidePreset>                       bodySlidePresets;
+		bool                                               bodySlideLoaded{ false };
 		std::string                                        status;
 		double                                             statusTime{ 0.0 };
 

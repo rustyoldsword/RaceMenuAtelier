@@ -132,7 +132,9 @@ namespace RMA::UI
 			std::string presetInfoOpen;
 			std::string presetFolder;  // the open preset folder, "" for the root, else "A/B/"
 			char        bodySlideName[80]{};
-			bool        bodySlideHimbo{ false };
+			int         bodySlideBody{ -1 };  // Body, -1 = follow the character
+			char        bodySlideSearch[64]{};
+			bool        bodySlideListed{ false };
 
 			// scene
 			bool rotating{ false };
@@ -284,6 +286,26 @@ namespace RMA::UI
 				return std::format("{:.3f}", a_value);
 			}
 			return std::format("{:.2f}", a_value);
+		}
+
+		// The track keeps RaceMenu's registered range. Like BodySlide, where the
+		// slider stops at 0..100 but -150 or 160 can be typed, a typed value of a
+		// CBBE 3BA / HIMBO / UBE body morph may go past it (sanity limit +-10).
+		struct Range
+		{
+			double min;
+			double max;
+		};
+
+		Range TypedRange(const Entry& a_entry)
+		{
+			if (a_entry.body != Body::None) {
+				return { -10.0, 10.0 };
+			}
+			if (Settings::Get().overdrive && a_entry.canOverdrive) {
+				return { -1.0e6, 1.0e6 };
+			}
+			return { a_entry.min, a_entry.max };
 		}
 
 		double Snap(const Entry& a_entry, double a_value)
@@ -672,7 +694,9 @@ namespace RMA::UI
 
 			// value (click to type it)
 			const bool editing = s.editKey == a_entry.key;
-			const auto valueText = FormatValue(a_entry.position, a_entry.interval);
+			const Range track{ a_entry.min, a_entry.max };
+			const bool  free = TypedRange(a_entry).max > a_entry.max;
+			const auto  valueText = FormatValue(a_entry.position, a_entry.interval);
 			const auto valueSize = im::CalcTextSize(valueText.c_str());
 			const float valueW = editing ? g.u * 5.0f : valueSize.x;
 			const float valueX = right - valueW;
@@ -696,11 +720,8 @@ namespace RMA::UI
 				if (cancel) {
 					s.editKey.clear();
 				} else if (entered || blurred) {
-					double v = s.editValue;
-					const bool overdrive = Settings::Get().overdrive && a_entry.canOverdrive;
-					if (!overdrive) {
-						v = std::clamp(v, a_entry.min, a_entry.max);
-					}
+					const auto typed = TypedRange(a_entry);
+					const double v = std::clamp(s.editValue, typed.min, typed.max);
 					if (std::isfinite(v) && std::abs(v - a_entry.position) > 1e-9) {
 						CommitValue(a_model, a_entry, v);
 					}
@@ -714,10 +735,10 @@ namespace RMA::UI
 					s.editGrace = 4;
 				}
 				const bool hovered = im::IsItemHovered();
-				const bool outside = a_entry.position < a_entry.min - 1e-9 || a_entry.position > a_entry.max + 1e-9;
+				const bool outside = a_entry.position < track.min - 1e-9 || a_entry.position > track.max + 1e-9;
 				dl::AddText(list, { valueX, lineY }, outside ? Color::Danger : hovered ? Color::GoldBright : a_changed ? Color::Gold : Color::Value, valueText.c_str());
 				if (hovered) {
-					W::Tooltip(a_entry.canOverdrive && Settings::Get().overdrive ? "Click to type a value (overdrive: may exceed the range)" : "Click to type a value");
+					W::Tooltip(free ? "Click to type a value (may go past the slider range, like BodySlide)" : "Click to type a value");
 				}
 			}
 
@@ -764,14 +785,15 @@ namespace RMA::UI
 			im::SetCursorScreenPos({ a_pos.x + g.padX, ctrlY });
 			const double step = a_entry.interval > 0.0 ? a_entry.interval : 0.01;
 			if (W::IconButton("##down", Icon::ChevronLeft, nullptr, false, g.ctrl)) {
-				const double v = std::clamp(Snap(a_entry, a_entry.position - step), a_entry.min, a_entry.max);
+				// a typed value past the track stays reachable step by step
+				const double v = std::clamp(Snap(a_entry, a_entry.position - step), std::min(track.min, a_entry.position), std::max(track.max, a_entry.position));
 				CommitValue(a_model, a_entry, v);
 			}
 			const float trackX = a_pos.x + g.padX + g.ctrl + g.u * 0.3f;
 			const float trackW = right - g.ctrl - g.u * 0.3f - trackX;
 			im::SetCursorScreenPos({ trackX, ctrlY });
 			double     value = a_entry.position;
-			const auto st = W::ValueTrack("##track", value, a_entry.min, a_entry.max, a_entry.interval, a_entry.initialPosition, { trackW, g.ctrl }, a_item.hue);
+			const auto st = W::ValueTrack("##track", value, track.min, track.max, a_entry.interval, a_entry.initialPosition, { trackW, g.ctrl }, a_item.hue);
 			if (st.activated) {
 				s.dragKey = a_entry.key;
 				s.dragFrom = a_entry.position;
@@ -793,7 +815,8 @@ namespace RMA::UI
 			}
 			im::SetCursorScreenPos({ right - g.ctrl, ctrlY });
 			if (W::IconButton("##up", Icon::ChevronRight, nullptr, false, g.ctrl)) {
-				const double v = std::clamp(Snap(a_entry, a_entry.position + step), a_entry.min, a_entry.max);
+				// a typed value past the track stays reachable step by step
+				const double v = std::clamp(Snap(a_entry, a_entry.position + step), std::min(track.min, a_entry.position), std::max(track.max, a_entry.position));
 				CommitValue(a_model, a_entry, v);
 			}
 		}
@@ -1553,7 +1576,7 @@ namespace RMA::UI
 			save |= im::Checkbox("Hide body sliders of the other body type", &st.sexFilter);
 			save |= im::Checkbox("Group related sliders under headers", &st.groupHeaders);
 			save |= im::Checkbox("Show RaceMenu's technical slider names", &st.showTechnicalNames);
-			save |= im::Checkbox("Typed values may exceed custom body morph ranges", &st.overdrive);
+			save |= im::Checkbox("Typed values may exceed other custom morph ranges (CBBE 3BA / HIMBO / UBE always can)", &st.overdrive);
 			W::SectionTitle("INTERFACE");
 			save |= im::Checkbox("Ask before finishing the character", &st.confirmDone);
 			save |= im::Checkbox("Show the scene and presets panel", &st.sidePanel);
@@ -2128,17 +2151,82 @@ namespace RMA::UI
 				});
 		}
 
+		Body CharacterBody(const Model& a_model)
+		{
+			if (Text::Lower(a_model.player.race).find("ube") != std::string::npos) {
+				return Body::UBE;
+			}
+			return a_model.player.sex == 0 ? Body::HIMBO : Body::CBBE;
+		}
+
+		const char* BodyName(Body a_body)
+		{
+			return a_body == Body::UBE ? "UBE" : a_body == Body::HIMBO ? "HIMBO" : "CBBE 3BA";
+		}
+
+		// Sets every RaceMenu slider of that body to the preset, like OBody does,
+		// but through RaceMenu's own sliders: the result stays editable, goes into
+		// RaceMenu presets and is one undo step. Sliders the preset leaves out go
+		// to zero; small/big are blended by the character's weight.
+		void ImportBodySlide(Model& a_model, const BodySlidePreset& a_preset, Body a_body)
+		{
+			const double                            w = Bridge::PlayerWeight() / 100.0;
+			std::unordered_map<std::string, double> wanted;
+			for (const auto& [name, lo, hi] : a_preset.sliders) {
+				wanted[Text::Lower(name)] = (lo + (hi - lo) * w) / 100.0;
+			}
+			HistoryItem                     item;
+			std::unordered_set<std::string> matched;
+			for (auto& e : a_model.entries) {
+				if (e.body != a_body) {
+					continue;
+				}
+				const auto   name = Text::Lower(e.morphName);
+				const auto   it = wanted.find(name);
+				const double v = it != wanted.end() ? it->second : 0.0;
+				if (it != wanted.end()) {
+					matched.insert(name);
+				}
+				if (std::abs(v - e.position) > 1e-6) {
+					item.push_back({ .key = e.key, .kind = HistoryStep::Kind::Value, .from = e.position, .to = v });
+					a_model.SetValue(e, v);
+				}
+			}
+			std::vector<std::string> missing;
+			for (const auto& [name, lo, hi] : a_preset.sliders) {
+				if (!matched.contains(Text::Lower(name)) && (lo != 0.0 || hi != 0.0)) {
+					missing.push_back(name);
+				}
+			}
+			a_model.Record(std::move(item));
+			std::string missingList;
+			for (const auto& name : missing) {
+				missingList += (missingList.empty() ? "" : ", ") + name;
+			}
+			logger::info("BodySlide import '{}' ({}): {} sliders set, weight {:.0f}, {} not in RaceMenu: {}",
+				a_preset.name, a_preset.file, matched.size(), w * 100.0, missing.size(), missingList);
+			a_model.SetStatus(missing.empty() ?
+			                      std::format("Imported '{}' ({} sliders)", a_preset.name, matched.size()) :
+			                      std::format("Imported '{}' ({} sliders, {} have no RaceMenu slider - see the log)", a_preset.name, matched.size(), missing.size()));
+		}
+
 		void BodySlideSection(Model& a_model)
 		{
 			const float u = U();
-			const float half = (im::GetContentRegionAvail().x - u * 0.3f) * 0.5f;
-			if (W::Button("##cbbe", nullptr, "CBBE 3BA", { half, 0.0f }, false, !s.bodySlideHimbo)) {
-				s.bodySlideHimbo = false;
+			const Body  body = s.bodySlideBody < 0 ? CharacterBody(a_model) : static_cast<Body>(s.bodySlideBody);
+			const float third = (im::GetContentRegionAvail().x - u * 0.6f) / 3.0f;
+			for (const auto b : { Body::CBBE, Body::HIMBO, Body::UBE }) {
+				if (b != Body::CBBE) {
+					im::SameLine(0.0f, u * 0.3f);
+				}
+				im::PushID(static_cast<int>(b));
+				if (W::Button("##body", nullptr, BodyName(b), { third, 0.0f }, false, body == b)) {
+					s.bodySlideBody = static_cast<int>(b);
+				}
+				im::PopID();
 			}
-			im::SameLine(0.0f, u * 0.3f);
-			if (W::Button("##himbo", nullptr, "HIMBO", { half, 0.0f }, false, s.bodySlideHimbo)) {
-				s.bodySlideHimbo = true;
-			}
+
+			// export
 			const float exportW = u * 6.0f;
 			im::SetNextItemWidth(im::GetContentRegionAvail().x - exportW - u * 0.3f);
 			im::InputTextWithHint("##bsname", "BodySlide preset name", s.bodySlideName, sizeof(s.bodySlideName));
@@ -2148,18 +2236,76 @@ namespace RMA::UI
 			if (W::Button("##export", Icon::Export, "Export", { exportW, 0.0f })) {
 				// RaceMenu's morph is BodySlide's zero-based value: 0 is the
 				// zeroed slider, 1 is 100%. Written to both small and big.
-				const std::string prefix = s.bodySlideHimbo ? "rsm_bodymorph_himbo" : "changemorphcbbe";
 				std::vector<std::pair<std::string, double>> sliders;
+				std::unordered_set<std::string>             seen;
 				for (const auto& e : a_model.entries) {
-					const auto cb = Text::Lower(e.callback);
-					if (e.type == Defs::kTypeSlider && e.interval < 1.0 && cb.starts_with(prefix)) {
-						sliders.emplace_back(e.callback.substr(prefix.size()), e.position);
+					if (e.body == body && seen.insert(Text::Lower(e.morphName)).second) {
+						sliders.emplace_back(e.morphName, e.position);
 					}
 				}
-				Bridge::ExportBodySlide(s.bodySlideHimbo, s.bodySlideName, std::move(sliders));
+				Bridge::ExportBodySlide(body, a_model.player.sex == 0, s.bodySlideName, std::move(sliders));
 			}
 			im::EndDisabled();
 			W::SmallText(im::GetWindowDrawList(), im::GetCursorScreenPos(), Color::TextFaint, "Saved to CalienteTools\\BodySlide\\SliderPresets (MO2: Overwrite)", 0.75f);
+			im::Dummy({ 1.0f, u * 0.85f });
+
+			// import
+			W::SectionTitle(std::format("IMPORT {} PRESET", BodyName(body)).c_str());
+			const float reloadW = im::GetFrameHeight();
+			im::SetNextItemWidth(im::GetContentRegionAvail().x - reloadW - u * 0.3f);
+			im::InputTextWithHint("##bssearch", "Search BodySlide presets", s.bodySlideSearch, sizeof(s.bodySlideSearch));
+			im::SameLine(0.0f, u * 0.3f);
+			if (W::IconButton("##bsreload", Icon::Refresh, "Read the preset folder again") || !s.bodySlideListed) {
+				s.bodySlideListed = true;
+				Bridge::ListBodySlidePresets();
+			}
+
+			const auto                          query = Text::Lower(s.bodySlideSearch);
+			std::vector<const BodySlidePreset*> shown;
+			for (const auto& preset : a_model.bodySlidePresets) {
+				if (preset.body == body && (query.empty() || preset.search.find(query) != std::string::npos)) {
+					shown.push_back(&preset);
+				}
+			}
+			const float rowH = im::GetFrameHeight() + u * 0.2f;
+			const float listH = std::min<float>(static_cast<float>(std::max<std::size_t>(shown.size(), 1)), 8.0f) * rowH + u * 0.4f;
+			im::BeginChild("##bspresets", { 0.0f, listH }, ImGuiMCP::ImGuiChildFlags_None);
+			ApplyFont();
+			if (!a_model.bodySlideLoaded) {
+				im::TextColored(ToVec4(Color::TextDim), "Reading SliderPresets...");
+			} else if (shown.empty()) {
+				im::TextColored(ToVec4(Color::TextFaint), "No %s presets in CalienteTools\\BodySlide\\SliderPresets", BodyName(body));
+			}
+			const float b = im::GetFrameHeight();
+			int         index = 0;
+			for (const auto* preset : shown) {
+				im::PushID(index++);
+				auto*       list = im::GetWindowDrawList();
+				const auto  pos = im::GetCursorScreenPos();
+				const float width = im::GetContentRegionAvail().x;
+				const bool  hovered = im::IsMouseHoveringRect(pos, pos + ImVec2{ width, b });
+				if (hovered) {
+					dl::AddRectFilled(list, pos, pos + ImVec2{ width, b }, Color::RowHover, u * 0.25f, 0);
+				}
+				const auto  count = std::format("{}", preset->sliders.size());
+				const auto  cs = W::SmallTextSize(count.c_str(), 0.75f);
+				const float textW = width - b - cs.x - u * 1.4f;
+				const auto  name = W::Ellipsize(preset->name, textW);
+				dl::AddText(list, { pos.x + u * 0.3f, pos.y + (b - im::GetTextLineHeight()) * 0.5f }, Color::Text, name.c_str());
+				W::SmallText(list, { pos.x + width - b - cs.x - u * 0.5f, pos.y + (b - cs.y) * 0.5f }, Color::TextFaint, count.c_str(), 0.75f);
+				if (hovered && !im::IsMouseHoveringRect(pos + ImVec2{ width - b - u * 0.2f, 0.0f }, pos + ImVec2{ width, b })) {
+					W::Tooltip(std::format("{}\n{} sliders, set \"{}\"\nfile {}", preset->name, preset->sliders.size(), preset->set, preset->file).c_str());
+				}
+				im::SetCursorScreenPos({ pos.x + width - b - u * 0.2f, pos.y });
+				if (W::IconButton("##apply", Icon::Folder, "Apply to this character (blended by weight, one undo step)")) {
+					ImportBodySlide(a_model, *preset, body);
+				}
+				im::SetCursorScreenPos({ pos.x, pos.y + rowH });
+				im::PopID();
+			}
+			im::EndChild();
+			W::SmallText(im::GetWindowDrawList(), im::GetCursorScreenPos(), Color::TextFaint,
+				std::format("Build the body in BodySlide with zeroed sliders; weight {:.0f} blends small/big", Bridge::PlayerWeight()).c_str(), 0.75f);
 			im::Dummy({ 1.0f, u * 0.85f });
 		}
 
@@ -2228,7 +2374,7 @@ namespace RMA::UI
 			if (W::Collapsible("##presets", Icon::Folder, "Presets", s.presetsOpen)) {
 				PresetsSection(a_model);
 			}
-			if (W::Collapsible("##bodyslide", Icon::Export, "BodySlide export", s.bodySlideOpen)) {
+			if (W::Collapsible("##bodyslide", Icon::Export, "BodySlide", s.bodySlideOpen)) {
 				BodySlideSection(a_model);
 			}
 			if (W::Collapsible("##tools", Icon::Wrench, "RaceMenu tools", s.toolsOpen)) {

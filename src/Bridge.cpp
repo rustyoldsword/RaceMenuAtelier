@@ -688,8 +688,145 @@ namespace RMA::Bridge
 		bool IsSafeSliderName(const std::string& a_name)
 		{
 			return !a_name.empty() && a_name.size() <= 128 && std::ranges::all_of(a_name, [](unsigned char c) {
-				return std::isalnum(c) || c == '_' || c == '-' || c == ' ';
+				// UBE names carry "n|p" and "__HEAD>"; XmlEscape takes care of them
+				return c >= 0x20 && c < 0x7F;
 			});
+		}
+
+		// --- BodySlide SliderPresets: just enough XML for <Preset>, <Group>, <SetSlider> ---
+
+		std::string XmlUnescape(std::string_view a_text)
+		{
+			static constexpr std::array<std::pair<std::string_view, char>, 5> kEntities{ { { "&amp;", '&' }, { "&lt;", '<' }, { "&gt;", '>' }, { "&quot;", '"' }, { "&apos;", '\'' } } };
+			std::string out;
+			for (std::size_t i = 0; i < a_text.size();) {
+				bool done = false;
+				if (a_text[i] == '&') {
+					for (const auto& [entity, c] : kEntities) {
+						if (a_text.substr(i, entity.size()) == entity) {
+							out += c;
+							i += entity.size();
+							done = true;
+							break;
+						}
+					}
+				}
+				if (!done) {
+					out += a_text[i++];
+				}
+			}
+			return out;
+		}
+
+		std::string XmlAttribute(std::string_view a_tag, std::string_view a_name)
+		{
+			for (std::size_t at = a_tag.find(a_name); at != std::string_view::npos; at = a_tag.find(a_name, at + 1)) {
+				const bool  boundary = at == 0 || std::isspace(static_cast<unsigned char>(a_tag[at - 1]));
+				std::size_t p = at + a_name.size();
+				while (p < a_tag.size() && std::isspace(static_cast<unsigned char>(a_tag[p]))) {
+					++p;
+				}
+				if (!boundary || p >= a_tag.size() || a_tag[p] != '=') {
+					continue;
+				}
+				++p;
+				while (p < a_tag.size() && std::isspace(static_cast<unsigned char>(a_tag[p]))) {
+					++p;
+				}
+				if (p >= a_tag.size() || (a_tag[p] != '"' && a_tag[p] != '\'')) {
+					continue;
+				}
+				const char quote = a_tag[p];
+				const auto end = a_tag.find(quote, p + 1);
+				if (end == std::string_view::npos) {
+					return {};
+				}
+				return XmlUnescape(a_tag.substr(p + 1, end - p - 1));
+			}
+			return {};
+		}
+
+		Body BodyOfPreset(const std::string& a_set, const std::vector<std::string>& a_groups)
+		{
+			std::string all = Text::Lower(a_set);
+			for (const auto& g : a_groups) {
+				all += "\n" + Text::Lower(g);
+			}
+			if (all.find("ube") != std::string::npos) {
+				return Body::UBE;
+			}
+			if (all.find("himbo") != std::string::npos) {
+				return Body::HIMBO;
+			}
+			if (all.find("cbbe") != std::string::npos || all.find("3ba") != std::string::npos || all.find("3bbb") != std::string::npos) {
+				return Body::CBBE;
+			}
+			return Body::None;
+		}
+
+		void ParseSliderPresets(const std::string& a_text, const std::string& a_file, std::vector<BodySlidePreset>& a_out)
+		{
+			std::optional<BodySlidePreset>                    preset;
+			std::vector<std::string>                          groups;
+			std::map<std::string, std::pair<double, double>> values;
+			std::vector<std::string>                          order;
+			const auto finish = [&] {
+				if (preset && !values.empty()) {
+					preset->body = BodyOfPreset(preset->set, groups);
+					for (const auto& name : order) {
+						const auto& [lo, hi] = values[name];
+						preset->sliders.emplace_back(name, lo, hi);
+					}
+					preset->search = Text::Lower(preset->name + "\n" + preset->set + "\n" + a_file);
+					a_out.push_back(std::move(*preset));
+				}
+				preset.reset();
+				groups.clear();
+				values.clear();
+				order.clear();
+			};
+			for (std::size_t open = a_text.find('<'); open != std::string::npos; open = a_text.find('<', open + 1)) {
+				const auto close = a_text.find('>', open);
+				if (close == std::string::npos) {
+					break;
+				}
+				const std::string_view tag(a_text.data() + open + 1, close - open - 1);
+				if (tag.starts_with("Preset") && (tag.size() == 6 || std::isspace(static_cast<unsigned char>(tag[6])))) {
+					finish();
+					preset.emplace();
+					preset->name = XmlAttribute(tag, "name");
+					preset->set = XmlAttribute(tag, "set");
+					preset->file = a_file;
+				} else if (tag.starts_with("/Preset")) {
+					finish();
+				} else if (preset && tag.starts_with("Group ")) {
+					groups.push_back(XmlAttribute(tag, "name"));
+				} else if (preset && tag.starts_with("SetSlider ")) {
+					const auto   name = XmlAttribute(tag, "name");
+					const auto   size = Text::Lower(XmlAttribute(tag, "size"));
+					const auto   text = XmlAttribute(tag, "value");
+					char*        end = nullptr;
+					const double value = std::strtod(text.c_str(), &end);
+					if (name.empty() || end == text.c_str() || !std::isfinite(value)) {
+						open = close;
+						continue;
+					}
+					auto [it, fresh] = values.try_emplace(name, 0.0, 0.0);
+					if (fresh) {
+						order.push_back(name);
+					}
+					// a slider given once applies to both sizes
+					if (size == "small") {
+						it->second.first = value;
+					} else if (size == "big") {
+						it->second.second = value;
+					} else {
+						it->second = { value, value };
+					}
+				}
+				open = close;
+			}
+			finish();
 		}
 
 		std::string XmlEscape(const std::string& a_text)
@@ -1170,7 +1307,7 @@ namespace RMA::Bridge
 	// Writes under Data, which MO2 redirects into Overwrite while BodySlide is
 	// launched through MO2 too. The value is RaceMenu's morph on BodySlide's
 	// zero-based scale; it is deliberately not clamped so overdrive survives.
-	void ExportBodySlide(bool a_himbo, const std::string& a_name, std::vector<std::pair<std::string, double>> a_sliders)
+	void ExportBodySlide(Body a_body, bool a_male, const std::string& a_name, std::vector<std::pair<std::string, double>> a_sliders)
 	{
 		if (!IsSafePresetName(a_name)) {
 			Status("Invalid BodySlide preset name");
@@ -1178,12 +1315,15 @@ namespace RMA::Bridge
 		}
 		std::erase_if(a_sliders, [](const auto& s) { return !IsSafeSliderName(s.first) || !std::isfinite(s.second); });
 		if (a_sliders.empty()) {
-			Status(a_himbo ? "No HIMBO morphs on this character" : "No CBBE 3BA morphs on this character");
+			Status(a_body == Body::UBE ? "No UBE morphs on this character" : a_body == Body::HIMBO ? "No HIMBO morphs on this character" : "No CBBE 3BA morphs on this character");
 			return;
 		}
-		SKSE::GetTaskInterface()->AddTask([a_himbo, a_name, sliders = std::move(a_sliders)] {
-			const std::string flavor = a_himbo ? "HIMBO" : "CBBE 3BA";
-			const std::string set = a_himbo ? "HIMBO" : "CBBE 3BBB Body Amazing";
+		SKSE::GetTaskInterface()->AddTask([a_body, a_male, a_name, sliders = std::move(a_sliders)] {
+			const std::string flavor = a_body == Body::UBE ? "UBE" : a_body == Body::HIMBO ? "HIMBO" : "CBBE 3BA";
+			// the set only names the project; BodySlide lists presets by group
+			const std::string set = a_body == Body::UBE ? (a_male ? "UBE SE 2.0 Release Body Male" : "UBE SE 2.0 Release Body") :
+			                        a_body == Body::HIMBO ? "HIMBO" :
+			                                                "CBBE 3BBB Body Amazing";
 			const auto        outPath = std::filesystem::path("Data\\CalienteTools\\BodySlide\\SliderPresets") /
 			                     std::filesystem::path(SKSE::stl::utf8_to_utf16("RaceMenu Atelier - " + a_name + " [" + flavor + "].xml").value_or(L"RaceMenu Atelier.xml"));
 			try {
@@ -1195,7 +1335,9 @@ namespace RMA::Bridge
 				}
 				out << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<SliderPresets>\n";
 				out << "  <Preset name=\"" << XmlEscape(a_name) << "\" set=\"" << set << "\">\n";
-				if (a_himbo) {
+				if (a_body == Body::UBE) {
+					out << "    <Group name=\"UBE\"/>\n    <Group name=\"UBE Female\"/>\n    <Group name=\"UBE Male\"/>\n";
+				} else if (a_body == Body::HIMBO) {
 					out << "    <Group name=\"HIMBO\"/>\n";
 				} else {
 					out << "    <Group name=\"CBBE\"/>\n    <Group name=\"3BBB\"/>\n    <Group name=\"3BA\"/>\n";
@@ -1213,6 +1355,46 @@ namespace RMA::Bridge
 				Status("BodySlide export failed");
 			}
 		});
+	}
+
+	// Every SliderPresets xml BodySlide would show, read off the game thread;
+	// MO2's virtual Data is visible to std::filesystem in the game process.
+	void ListBodySlidePresets()
+	{
+		WithModel([](Model& m) {
+			m.bodySlideLoaded = false;
+			m.bodySlidePresets.clear();
+		});
+		std::thread([] {
+			std::vector<BodySlidePreset> presets;
+			std::error_code              ec;
+			const std::filesystem::path  root("Data\\CalienteTools\\BodySlide\\SliderPresets");
+			for (std::filesystem::directory_iterator it(root, ec), end; !ec && it != end; it.increment(ec)) {
+				if (!it->is_regular_file(ec) || Text::Lower(it->path().extension().string()) != ".xml") {
+					continue;
+				}
+				std::ifstream in(it->path(), std::ios::binary);
+				if (!in) {
+					continue;
+				}
+				const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+				const auto        file = SKSE::stl::utf16_to_utf8(it->path().filename().wstring()).value_or("preset.xml");
+				ParseSliderPresets(text, file, presets);
+			}
+			std::ranges::sort(presets, [](const auto& a, const auto& b) { return Text::Lower(a.name) < Text::Lower(b.name); });
+			logger::info("BodySlide presets: {} read", presets.size());
+			WithModel([&](Model& m) {
+				m.bodySlidePresets = std::move(presets);
+				m.bodySlideLoaded = true;
+			});
+		}).detach();
+	}
+
+	float PlayerWeight()
+	{
+		const auto player = RE::PlayerCharacter::GetSingleton();
+		const auto base = player ? player->GetActorBase() : nullptr;
+		return base ? std::clamp(base->weight, 0.0f, 100.0f) : 50.0f;
 	}
 
 	// ----------------------------------------------------------------------

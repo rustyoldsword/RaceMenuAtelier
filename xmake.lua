@@ -1,9 +1,10 @@
 set_xmakever("3.0.0")
 
 includes("lib/CommonLibSSE-NG")
+includes("xmake/shared-commonlib.lua")
 
 set_project("RaceMenuAtelier")
-set_version("1.0.2")
+set_version("1.1.0")
 set_license("GPL-3.0")
 set_languages("c++23")
 set_warnings("allextra")
@@ -24,6 +25,8 @@ if is_plat("windows") then
     add_cxxflags("cl::/permissive-", "cl::/Zc:preprocessor", "cl::/EHsc", "cl::/utf-8")
     -- keep the build machine's paths out of the shipped DLL
     add_shflags("/PDBALTPATH:%_PDB%", {force = true})
+    -- CommonLib headers expand __FILE__ inside our own objects too
+    add_cxxflags("cl::/d1trimfile:$(projectdir)\\", {force = true})
     add_cxxflags("cl::/wd4068", "cl::/wd4201", "cl::/wd4251", "cl::/wd4275", "cl::/wd4267", "cl::/wd4244", "cl::/wd4996", "cl::/wd4100")
 end
 

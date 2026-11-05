@@ -150,6 +150,37 @@ namespace RMA
 			return a_tintType >= 256 && a_tintType <= 259;
 		}
 
+		// The three body morph scripts register one slider per BodySlide slider:
+		// CBBE 3BA "ChangeMorphCBBE<name>", HIMBO "rsm_bodymorph_himbo<name>",
+		// UBE "ChangePart<name>" under the rsm_bodymorph_UBE_* categories.
+		// Their Reset / Load / Save buttons are steppers and are left out.
+		Body BodyOf(const Entry& a_entry, std::string& a_morph)
+		{
+			a_morph.clear();
+			if (a_entry.type != Defs::kTypeSlider || a_entry.interval >= 1.0) {
+				return Body::None;
+			}
+			const auto take = [&](std::string_view a_prefix, Body a_body) {
+				if (a_entry.callback.size() > a_prefix.size() && Text::Lower(a_entry.callback.substr(0, a_prefix.size())) == a_prefix) {
+					a_morph = a_entry.callback.substr(a_prefix.size());
+					return a_body;
+				}
+				return Body::None;
+			};
+			if (const auto b = take("changemorphcbbe"sv, Body::CBBE); b != Body::None) {
+				return b;
+			}
+			if (const auto b = take("rsm_bodymorph_himbo"sv, Body::HIMBO); b != Body::None) {
+				return b;
+			}
+			for (const auto& filter : a_entry.textFilters) {
+				if (Text::Lower(filter).starts_with("rsm_bodymorph_ube")) {
+					return take("changepart"sv, Body::UBE);
+				}
+			}
+			return Body::None;
+		}
+
 		void Derive(Entry& a_entry)
 		{
 			a_entry.label = a_entry.text;
@@ -163,6 +194,8 @@ namespace RMA
 			const auto cb = Text::Lower(a_entry.callback);
 			const bool bodyCallback = cb.starts_with("changedoublemorph") || cb.starts_with("changemorphcbbe") || cb.starts_with("rsm_bodymorph_himbo");
 			a_entry.canOverdrive = a_entry.type == Defs::kTypeSlider && bodyCallback && a_entry.custom && a_entry.interval < 1.0;
+
+			a_entry.body = BodyOf(a_entry, a_entry.morphName);
 
 			if (a_entry.type == Defs::kTypeRace) {
 				// a race-type entry outside the Race category is another mod's list riding on the race list

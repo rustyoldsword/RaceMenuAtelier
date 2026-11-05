@@ -45,7 +45,9 @@ namespace RMA::Bridge
 	void SavePreset(const std::string& a_name);
 	void LoadPreset(const std::string& a_relativePath);
 	void ReadPresetInfo(const std::string& a_relativePath);
-	void ExportBodySlide(bool a_himbo, const std::string& a_name, std::vector<std::pair<std::string, double>> a_sliders);
+	void ExportBodySlide(Body a_body, bool a_male, const std::string& a_name, std::vector<std::pair<std::string, double>> a_sliders);
+	void ListBodySlidePresets();
+	[[nodiscard]] float PlayerWeight();  // 0..100, read live for BodySlide's small/big blend
 
 	// modes
 	void EnterNative();

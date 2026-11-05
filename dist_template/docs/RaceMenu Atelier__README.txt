@@ -1,4 +1,4 @@
-RaceMenu Atelier 1.0.2
+RaceMenu Atelier 1.1.0
 ======================
 
 A native interface for RaceMenu, built on SKSE Menu Framework.
@@ -26,6 +26,16 @@ L               RaceMenu light on / off
 R               finish character creation
 Ctrl+Z / Ctrl+Y undo / redo
 Ctrl+F          search every slider
+
+BodySlide
+---------
+Click a value to type it. CBBE 3BA, HIMBO and UBE body morphs accept typed values
+past the slider range, the same way BodySlide does (slider 0..100, type -150 or 160).
+The BodySlide section of the side panel exports the current body morphs as a
+BodySlide slider preset (CBBE 3BA, HIMBO or UBE) and imports any BodySlide slider
+preset onto the character's RaceMenu sliders. Small/big values are blended by the
+character's weight; import is one undo step. Build the body in BodySlide with zeroed
+sliders, as for OBody.
 
 Settings
 --------
