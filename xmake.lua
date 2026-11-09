@@ -4,7 +4,7 @@ includes("lib/CommonLibSSE-NG")
 includes("xmake/shared-commonlib.lua")
 
 set_project("RaceMenuAtelier")
-set_version("1.1.0")
+set_version("1.2.0")
 set_license("GPL-3.0")
 set_languages("c++23")
 set_warnings("allextra")

@@ -1,0 +1,176 @@
+[info]You need [url=https://dwemermods.com/mods/4840]RaceMenu Atelier[/url] [b]1.2.0 or newer[/b]. The two xEdit scripts ship in its archive under [i]docs\RaceMenu Atelier - xEdit Scripts[/i].[/info]
+[br]
+Make a face in RaceMenu and put it on any NPC: no Creation Kit, no "Export FaceGen" (Ctrl+F4), no hand-editing of records. This guide covers the whole path, from the face on your character to a finished, self-contained follower mod.
+[br]
+[hr]
+[h2]1. What you get[/h2]
+The work is split between three tools:
+[list]
+[*][b]FaceGen for NPC[/b] button (RaceMenu Atelier, in the game). Writes the face of your current character as the pre-built head (FaceGen) of an NPC you pick, plus a JSON file with all of the face's record data.
+[*][b]Atelier - Apply NPC Appearance[/b] (xEdit script). Writes that record data into the NPC: head parts, hair colour, skin tone, tint layers, face sliders, height and weight.
+[*][b]Atelier - Build NPC Mod[/b] (xEdit script). Builds a self-contained mod: copies the head parts the face uses into your plugin together with every file they need, writes the face into the NPC, copies the FaceGen, and writes a manifest of where every file came from.
+[/list]
+There are two ways to finish:
+[list]
+[*][b]Route A: Apply.[/b] The head parts are already in the NPC's plugin or its masters, for example your own follower mod that ships its hair and eyes. One script, and you move the FaceGen files.
+[*][b]Route B: Build.[/b] You used head parts from other mods (hair packs, eyes, a high-poly head) and want one folder that works on its own. The script copies everything for you.
+[/list]
+[br]
+[hr]
+[h2]2. Requirements[/h2]
+[list]
+[*]Skyrim Special Edition or Anniversary Edition with SKSE.
+[*]RaceMenu, Address Library for SKSE Plugins, SKSE Menu Framework 3.x.
+[*]RaceMenu Atelier [b]1.2.0 or newer[/b].
+[*][b]SSEEdit (xEdit) 4.1.5 or newer.[/b]
+[*]Mod Organizer 2 is recommended. Vortex works too, but the manifest can only list source mods under MO2.
+[/list]
+[h3]Installing the xEdit scripts[/h3]
+The scripts are in the Atelier archive under [i]docs\RaceMenu Atelier - xEdit Scripts[/i] (in MO2: right-click the mod, Open in Explorer). Copy all three into xEdit's [i]Edit Scripts[/i] folder, next to SSEEdit.exe:
+[list]
+[*]Atelier - Apply NPC Appearance.pas
+[*]Atelier - Build NPC Mod.pas
+[*]AtelierNPCFaceCore.pas (shared code; both scripts need it)
+[/list]
+Under MO2, run xEdit from MO2 so it sees your whole load order, Overwrite included.
+[br]
+[hr]
+[h2]3. Before you start: the NPC record[/h2]
+The face is written [b]for a specific NPC record[/b], so that record has to exist and be loaded.
+[list]
+[*][b]Your own new follower:[/b] create the NPC in xEdit or the Creation Kit first: race, sex, name, anything. The face comes later. Or take any existing NPC of the right race and sex as a "carrier" and let Build make a new NPC from it (route B, "new NPC").
+[*][b]Race and sex must match your character.[/b] The export only warns, but both scripts refuse a record whose race or sex differs from the face, because the head would not fit its head parts.
+[*][b]No template traits.[/b] An NPC that takes its traits from a template shows the template's face. The picker draws such NPCs in grey.
+[*]The NPC must come from a plugin. NPCs created at runtime cannot be targeted.
+[/list]
+[br]
+[hr]
+[h2]4. Step 1: make the face in RaceMenu[/h2]
+Open RaceMenu ([i]showracemenu[/i] in the console) and build the face as usual: head, hair, eyes, brows, sliders, sculpt, colours.
+[list]
+[*][b]Head parts must come from plugins.[/b] Every head part you pick is recorded by its plugin and FormID. Parts that only exist at runtime cannot be exported.
+[*][b]No need to reset the expression.[/b] The export zeroes every expression, modifier and phoneme and recomputes the face before reading it.
+[*][b]The hair colour is baked in.[/b] The game does not recolour a loaded FaceGen head, so the export copies your live hair colour into the head's hair shaders and also writes it into the record.
+[*][b]Not carried over:[/b] RaceMenu overlays and tattoos, NiOverride node scales, expressions. The JSON lists your scales so that you can see a difference.
+[*][b]Height and weight are taken from your character.[/b] Change them in the record afterwards if the NPC should differ.
+[/list]
+[br]
+[hr]
+[h2]5. Step 2: export the face[/h2]
+[step]In RaceMenu open Atelier's [b]Tools[/b] section and press [b]FaceGen for NPC[/b].[/step]
+[step]Press [b]Choose the NPC...[/b]. A window lists every NPC record of the loaded plugins:
+[list]
+[*]the plugin list on the right has its own search box and shows how many NPCs each plugin has;
+[*]the main search finds a name, an EditorID or a FormID: the local one (D62) or the runtime one the console prints (FE17ED62);
+[*]grey rows are NPCs that take their face from a template.
+[/list]
+[/step]
+[step]Click the NPC. The button now shows it, for example [i]Rem (MyFollowers.esp|D62)[/i].[/step]
+[step]Press [b]Write[/b] and watch the status line. When it is done it reads [i]FaceGen for <plugin>|<id> written: N shapes, tint ...[/i][/step]
+Three files are written. Under MO2 they land in [b]Overwrite[/b]; a file whose folder already exists in a mod may be written into that mod instead:
+[code]meshes\actors\character\FaceGenData\FaceGeom\<plugin>\<id>.nif     the head
+textures\actors\character\FaceGenData\FaceTint\<plugin>\<id>.dds   the face tint
+SKSE\Plugins\RaceMenuAtelier\NPCFaces\<plugin>\<id>.json           record data for xEdit[/code]
+[i]<plugin>[/i] is the plugin that defines the NPC and [i]<id>[/i] its local FormID in eight hex digits (a light plugin uses its 12-bit ID, for example 00000D62).
+[info][b]Safety:[/b] an existing FaceGen file is overwritten only if Atelier wrote it (its hash is in the JSON). A FaceGen file shipped by a mod is left alone and the export stops with a message.[/info]
+The log [i]Documents\My Games\Skyrim Special Edition\SKSE\RaceMenuAtelier.log[/i] lists every shape written and anything that was left out.
+You can export several NPCs in one session: change the face, pick the next NPC, press Write.
+[br]
+[hr]
+[h2]6a. Route A: apply to the NPC (head parts already in the plugin)[/h2]
+Use this when every head part of the face is defined in the NPC's plugin or one of its masters.
+[step]Close the game (or leave it at the main menu) and start xEdit with the NPC's plugin.[/step]
+[step]Select the NPC record or records (the original or an override), right-click, [b]Apply Script...[/b], choose [b]Atelier - Apply NPC Appearance[/b].[/step]
+[step]Read the messages. [i]applied: 14 head parts, 33 tint layers, height 1[/i] means it worked. [i]REFUSED[/i] lists the reason (race, sex, or a head part from a plugin that is not a master).[/step]
+[step]Save the plugin when xEdit asks on exit.[/step]
+[step][b]Move the FaceGen files[/b] (.nif and .dds) from Overwrite into your mod folder, keeping the folder structure. The JSON is only needed by the scripts. Keep it if you want to export the same NPC again later, because it is what lets Atelier overwrite its own FaceGen.[/step]
+[step]Adjust height or weight in the record if the NPC should differ from your character.[/step]
+What is written: PNAM head parts, HCLF hair colour (a new [i]RMA_HairColor_<id>[/i] colour record when the colour form is not reachable from the plugin), FTST head texture, QNAM texture lighting, NAM9 face morphs, NAMA face parts, the tint layers, NAM6 height and NAM7 weight. Running it again with the same JSON gives the same record.
+[br]
+[hr]
+[h2]6b. Route B: build a self-contained mod[/h2]
+Use this when the face uses head parts from other mods, or whenever you want one folder that needs nothing else.
+[h3]Run it[/h3]
+[step]Start xEdit (under MO2, from MO2) with your load order.[/step]
+[step]Select the NPC record or records the faces were exported for, right-click, [b]Apply Script...[/b], choose [b]Atelier - Build NPC Mod[/b].[/step]
+[step]Answer four questions:
+[list]
+[*][b]Plugin:[/b] a new name (MyFollower.esp) makes a new ESL-flagged plugin. The name of a loaded plugin (for example the NPC's own) adds to it.
+[*][b]EditorID prefix:[/b] letters, digits and _, for example MYF. Copies are named MYF_<original EditorID> and their meshes go to meshes\MYF\.
+[*][b]Output folder:[/b] the new mod's folder. Under MO2 the default is mods\<plugin name>, which MO2 shows as a new mod after a refresh (F5).
+[*][b]New NPC?[/b] [b]Yes[/b]: a new NPC record <prefix>_<EditorID> is created in the plugin from the selected one and gets the face. [b]No[/b]: the selected NPC gets the face, as an override in the plugin when it is defined elsewhere.
+[/list]
+[/step]
+[step]When it finishes, the messages show the summary: records copied, files copied, base-game files left out, files missing, and the manifest path.[/step]
+[warning]On exit, when xEdit asks which plugins to save, [b]untick the new plugin[/b]. It is already saved in the output folder; if you save it, an identical copy also lands in Overwrite and can hide the real one. A plugin that already existed is saved by xEdit as usual, so tick that one.[/warning]
+[h3]What it does[/h3]
+For every selected NPC with an exported face:
+[list=1]
+[*][b]Copies the head parts.[/b] Every head part of the face that does not come from the base game is copied into the plugin, together with what it points at: extra parts, texture sets, colours. Base-game parts (Skyrim, Update, the three DLCs, Creation Club) stay references. Copies are named <prefix>_<original EditorID>, so they never clash with the originals (duplicate head part EditorIDs can crash the game).
+[*][b]Moves the meshes.[/b] The copies' meshes and TRI files go to meshes\<prefix>\<original path>. Textures keep their paths.
+[*][b]Writes the face[/b] into the NPC, pointing at the copies (as route A does).
+[*][b]Copies the FaceGen[/b] to the NPC's own FaceGen path. The head's shapes are renamed to the copies' EditorIDs (the game matches FaceGen shapes to head parts by EditorID) and the head's tint slot points at the new tint. You do not need to export again.
+[/list]
+Then, once for all NPCs:
+[list=1]
+[*][b]Copies every file the copies use:[/b] meshes, TRI files, every texture each mesh and texture set names, and SMP .xml files a mesh links to. It also copies the textures the FaceGen head uses, such as a custom skin. Files that the base game's archives provide are left out.
+[*][b]Copies the RaceMenu morphs[/b] of the copied head parts: the matching morphs.ini lines rewritten for the new paths, the morph TRI files, and the source plugin's Races.ini and slider files. The character can still be edited in RaceMenu with the copies.
+[*][b]Writes the manifest[/b] SKSE\Plugins\RaceMenuAtelier\Builds\<plugin>.json.
+[/list]
+[h3]Read the manifest[/h3]
+[list]
+[*][b]records[/b]: every record copied (original -> copy).
+[*][b]npcs[/b]: each NPC, its FaceGen paths and shape count; [i]shapesWithoutPart[/i] must be absent.
+[*][b]files[/b]: every file copied: path, source path, archive or loose, [b]MD5[/b], and [b]providers[/b], the MO2 mods that contain it (highest priority first).
+[*][b]baseGameFiles[/b]: files left out because the base game provides them.
+[*][b]missing[/b]: files a record or mesh names but nothing provides. [b]Fix these before release.[/b]
+[*][b]notes[/b]: which morphs.ini files the morphs came from, and warnings.
+[/list]
+[danger][b]providers[/b] tells you whose permission a release needs. A built mod still contains other authors' files.[/danger]
+[h3]After the build[/h3]
+[step]In MO2 press F5 and enable the new mod. Put it below the mods it was built from, or above if you later disable them.[/step]
+[step]Enable the plugin and sort it (LOOT).[/step]
+[step]Test on a [b]new game[/b] or with coc into a test cell. Spawn the NPC with [i]player.placeatme <FormID>[/i] and check the face, hair colour and eyes up close.[/step]
+[step]When everything works you can disable the source mods. The new folder has its own copies.[/step]
+[h3]Running it again[/h3]
+Running Build again with the same answers gives the same result: copies are found by EditorID and reused, and files are rewritten. A copy is [b]not[/b] refreshed if its source record changed. Delete the copy in xEdit first and the next run takes the source again.
+[h3]Presets (optional)[/h3]
+Put [i]Atelier - Build NPC Mod.json[/i] next to the script to preset the answers, or to skip the dialogs:
+[code]{
+  "plugin": "MyFollower.esp",
+  "prefix": "MYF",
+  "outputFolder": "D:\\Modding\\MO2\\mods\\MyFollower",
+  "newNpc": true,
+  "mo2Folder": "D:\\Modding\\MO2",
+  "interactive": true
+}[/code]
+[i]interactive: false[/i] runs without dialogs. [i]mo2Folder[/i] is only needed when the script cannot find ModOrganizer.ini two folders above the game's Data folder (a portable instance is found by itself).
+[br]
+[hr]
+[h2]7. Troubleshooting[/h2]
+[list]
+[*][b]Dark or grey face.[/b] The FaceGen head does not match the record. Each head shape must be named after a head part the NPC really has, and the files must sit at <plugin>\<id> of the NPC's defining plugin. Export again, run the script again, and check that the FaceGen files won in MO2 (Overwrite or your mod, not an older copy).
+[*][b]White hair.[/b] Builds before 1.2.0 did not bake the hair colour. Export again.
+[*][b]Export: "... already exists and was not written by this tool".[/b] A mod ships FaceGen for that NPC. Move that file out of its mod (or hide it in MO2), then export.
+[*][b]Export: "That NPC was created at runtime".[/b] Pick an NPC defined in a plugin.
+[*][b]Export warns "race differs" or "sex differs".[/b] Switch your character to the NPC's race and sex. The scripts refuse a mismatch.
+[*][b]Export warns "uses a template's traits".[/b] The game shows the template's face. Remove the Traits template flag or target the template.
+[*][b]Apply: "REFUSED ... head part ... is not a master".[/b] The part lives in a mod your plugin does not depend on. Use route B, or add that plugin as a master.
+[*][b]Apply or Build: "no exported face".[/b] No JSON for that NPC. Check that you exported this exact NPC and that xEdit sees Overwrite (start it from MO2).
+[*][b]Build note: "FaceGen shape X is not a head part of the NPC".[/b] The face was exported with different head parts than the record now has. Export again, then build again.
+[*][b]Build: entries in "missing".[/b] A record or mesh names a file nobody provides (often a broken path in the source mod). Find the file or fix the path.
+[*][b]Atelier will not overwrite a built NPC's FaceGen.[/b] That FaceGen came from Build and has no Atelier JSON for the new NPC. Export to the original NPC and build again, or delete the built FaceGen files first.
+[*][b]A new plugin shows no records in game.[/b] An empty plugin of the same name in Overwrite hides it. Delete it from Overwrite (see the warning in "Run it").
+[/list]
+[br]
+[hr]
+[h2]8. Limits[/h2]
+[list]
+[*]RaceMenu overlays, tattoos and node scales are not carried over.
+[*]Body morphs (BodySlide or OBody) are not part of the face. Set the NPC's body separately.
+[*]Build copies head parts, texture sets and colours. Other records the NPC points at (outfit, voice, class, race) stay references to their plugins.
+[*]Copies are not refreshed automatically when their source changes (see "Running it again").
+[*]Releasing a built mod still needs the permission of every mod listed under providers.
+[/list]
+[br]
+Questions and corrections are welcome in the comments of [url=https://dwemermods.com/mods/4840]RaceMenu Atelier[/url].

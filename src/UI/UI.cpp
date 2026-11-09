@@ -1,6 +1,7 @@
 #include "UI/UI.h"
 
 #include "Bridge.h"
+#include "FaceExport.h"
 #include "Model.h"
 #include "Preview.h"
 #include "Settings.h"
@@ -62,6 +63,7 @@ namespace RMA::UI
 			SKSEMenuFramework::Model::WindowInterface* window{ nullptr };
 			bool                                       registered{ false };
 			bool                                       session{ false };
+			double                                     openedAt{ 0.0 };  // when the window last took the input
 
 			// lock compensation (see CompensateLock)
 			bool wasLocked{ false };
@@ -132,6 +134,13 @@ namespace RMA::UI
 			std::string presetInfoOpen;
 			std::string presetFolder;  // the open preset folder, "" for the root, else "A/B/"
 			char        bodySlideName[80]{};
+			bool        npcFaceOpen{ false };
+			std::string npcTarget;       // "Plugin.esp|00000D62", the export query
+			std::string npcTargetLabel;  // what the button shows
+			char        npcSearch[96]{};
+			char        npcPluginSearch[64]{};
+			std::string npcPlugin;  // "" = all plugins
+			bool        openNPCPicker{ false };
 			int         bodySlideBody{ -1 };  // Body, -1 = follow the character
 			char        bodySlideSearch[64]{};
 			bool        bodySlideListed{ false };
@@ -2309,6 +2318,8 @@ namespace RMA::UI
 			im::Dummy({ 1.0f, u * 0.85f });
 		}
 
+		void NPCPicker();
+
 		void ToolsSection()
 		{
 			const float u = U();
@@ -2325,7 +2336,157 @@ namespace RMA::UI
 			if (W::Button("##diag", Icon::Bug, "Write a diagnostic report", { w, 0.0f })) {
 				Bridge::WriteDiagnostics();
 			}
+			if (W::Button("##npcface", Icon::Export, "FaceGen for NPC", { w, 0.0f }, false, s.npcFaceOpen)) {
+				s.npcFaceOpen = !s.npcFaceOpen;
+			}
+			if (s.npcFaceOpen) {
+				const float goW = u * 5.0f;
+				const float pickW = im::GetContentRegionAvail().x - goW - u * 0.3f;
+				const auto  label = W::Ellipsize(s.npcTarget.empty() ? std::string("Choose the NPC...") : s.npcTargetLabel, pickW - u * 2.5f);
+				if (W::Button("##npcpick", Icon::Search, label.c_str(), { pickW, 0.0f })) {
+					if (!FaceExport::NPCList()) {
+						FaceExport::RequestNPCList();
+					}
+					s.openNPCPicker = true;
+				}
+				if (!s.npcTarget.empty() && im::IsItemHovered()) {
+					W::Tooltip(std::format("{}\n{}", s.npcTargetLabel, s.npcTarget).c_str());
+				}
+				im::SameLine(0.0f, u * 0.3f);
+				im::BeginDisabled(s.npcTarget.empty() || FaceExport::IsBusy());
+				if (W::Button("##npcfacego", Icon::Save, "Write", { goW, 0.0f })) {
+					Bridge::ExportNPCFace(s.npcTarget);
+				}
+				im::EndDisabled();
+				W::SmallText(im::GetWindowDrawList(), im::GetCursorScreenPos(), Color::TextFaint, "FaceGeom, FaceTint and NPCFaces json (MO2: Overwrite)", 0.75f);
+				im::Dummy({ 1.0f, u * 0.85f });
+			}
 			im::Dummy({ 1.0f, u * 0.2f });
+			NPCPicker();
+		}
+
+		// "FaceGen for NPC" target: plugin filter (searchable) + NPC search
+		void NPCPicker()
+		{
+			if (s.openNPCPicker) {
+				im::OpenPopup("Choose the NPC##npcpicker");
+				s.openNPCPicker = false;
+			}
+			const auto* io = im::GetIO();
+			const float u = U();
+			im::SetNextWindowPos({ io->DisplaySize.x * 0.5f, io->DisplaySize.y * 0.5f }, ImGuiMCP::ImGuiCond_Appearing, { 0.5f, 0.5f });
+			im::SetNextWindowSize({ std::min(io->DisplaySize.x * 0.6f, u * 44.0f), io->DisplaySize.y * 0.72f }, ImGuiMCP::ImGuiCond_Appearing);
+			if (!im::BeginPopupModal("Choose the NPC##npcpicker", nullptr, ImGuiMCP::ImGuiWindowFlags_NoTitleBar | ImGuiMCP::ImGuiWindowFlags_NoSavedSettings)) {
+				return;
+			}
+			ApplyFont();
+			const float uu = U();
+			im::TextColored(ToVec4(Color::GoldBright), "%s", "FaceGen for NPC: choose the NPC");
+			im::SameLine(im::GetContentRegionMax().x - im::GetFrameHeight());
+			if (W::IconButton("##close", Icon::Close, "Close") || im::IsKeyPressed(ImGuiMCP::ImGuiKey_Escape, false)) {
+				im::CloseCurrentPopup();
+			}
+
+			const auto npcs = FaceExport::NPCList();
+			if (!npcs) {
+				if (!FaceExport::NPCListPending()) {
+					FaceExport::RequestNPCList();
+				}
+				im::TextColored(ToVec4(Color::TextDim), "Reading the NPC records...");
+				im::EndPopup();
+				return;
+			}
+
+			// plugins that define NPCs, with counts
+			std::vector<std::pair<std::string, int>> plugins;
+			for (const auto& npc : *npcs) {
+				auto it = std::ranges::find(plugins, npc.plugin, &std::pair<std::string, int>::first);
+				if (it == plugins.end()) {
+					plugins.emplace_back(npc.plugin, 1);
+				} else {
+					++it->second;
+				}
+			}
+			std::ranges::sort(plugins, [](const auto& a, const auto& b) { return Text::Lower(a.first) < Text::Lower(b.first); });
+
+			if (im::IsWindowAppearing()) {
+				im::SetKeyboardFocusHere();
+			}
+			im::SetNextItemWidth(im::GetContentRegionAvail().x * 0.55f);
+			im::InputTextWithHint("##search", "Search by name, EditorID or FormID", s.npcSearch, sizeof(s.npcSearch));
+			im::SameLine();
+			im::SetNextItemWidth(-1.0f);
+			const auto pluginLabel = s.npcPlugin.empty() ? std::format("All plugins ({})", plugins.size()) : s.npcPlugin;
+			if (im::BeginCombo("##plugin", pluginLabel.c_str(), ImGuiMCP::ImGuiComboFlags_HeightLarge)) {
+				ApplyFont();
+				if (im::IsWindowAppearing()) {
+					im::SetKeyboardFocusHere();
+				}
+				im::SetNextItemWidth(-1.0f);
+				im::InputTextWithHint("##pluginsearch", "Search plugins", s.npcPluginSearch, sizeof(s.npcPluginSearch));
+				const auto pq = Text::Lower(s.npcPluginSearch);
+				if (pq.empty() && im::Selectable("All plugins", s.npcPlugin.empty())) {
+					s.npcPlugin.clear();
+				}
+				for (const auto& [plugin, count] : plugins) {
+					if (!pq.empty() && Text::Lower(plugin).find(pq) == std::string::npos) {
+						continue;
+					}
+					if (im::Selectable(std::format("{}  ({})", plugin, count).c_str(), plugin == s.npcPlugin)) {
+						s.npcPlugin = plugin;
+						s.npcPluginSearch[0] = '\0';
+					}
+				}
+				im::EndCombo();
+			}
+
+			const auto query = Text::Lower(s.npcSearch);
+			std::vector<const FaceExport::NPCEntry*> shown;
+			for (const auto& npc : *npcs) {
+				if ((s.npcPlugin.empty() || npc.plugin == s.npcPlugin) && (query.empty() || npc.search.find(query) != std::string::npos)) {
+					shown.push_back(&npc);
+				}
+			}
+			im::TextColored(ToVec4(Color::TextFaint), "%zu of %zu NPCs. Grey: the face comes from a template", shown.size(), npcs->size());
+
+			im::BeginChild("##npcs", { 0.0f, 0.0f }, ImGuiMCP::ImGuiChildFlags_None);
+			ApplyFont();
+			const float rowH = im::GetTextLineHeightWithSpacing() * 1.25f;
+			auto*       clipper = ImGuiMCP::ImGuiListClipperManager::Create();
+			ImGuiMCP::ImGuiListClipperManager::Begin(clipper, static_cast<int>(shown.size()), rowH);
+			while (ImGuiMCP::ImGuiListClipperManager::Step(clipper)) {
+				for (int r = clipper->DisplayStart; r < clipper->DisplayEnd; ++r) {
+					const auto& npc = *shown[r];
+					im::PushID(r);
+					const auto  pos = im::GetCursorScreenPos();
+					const float width = im::GetContentRegionAvail().x;
+					const bool  isCurrent = npc.Query() == s.npcTarget;
+					if (im::Selectable("##npc", isCurrent, 0, { width, rowH - im::GetStyle()->ItemSpacing.y })) {
+						s.npcTarget = npc.Query();
+						auto shortID = npc.formID;  // 00000D62 -> D62
+						shortID.erase(0, std::min(shortID.find_first_not_of('0'), shortID.size() - 3));
+						s.npcTargetLabel = std::format("{} ({}|{})", npc.name.empty() ? (npc.editorID.empty() ? std::string("unnamed") : npc.editorID) : npc.name, npc.plugin, shortID);
+						im::CloseCurrentPopup();
+					}
+					auto*       list = im::GetWindowDrawList();
+					const float ty = pos.y + (rowH - im::GetStyle()->ItemSpacing.y - uu) * 0.5f;
+					const auto  right = std::format("{}  {}", npc.formID, npc.plugin);
+					const auto  rightSize = W::SmallTextSize(right.c_str(), 0.8f);
+					const auto  title = npc.name.empty() ? (npc.editorID.empty() ? std::string("(unnamed)") : npc.editorID) :
+					                                     (npc.editorID.empty() ? npc.name : std::format("{}  [{}]", npc.name, npc.editorID));
+					const auto  label = W::Ellipsize(std::format("{} {}", npc.female ? "F" : "M", title), width - rightSize.x - uu * 1.5f);
+					dl::AddText(list, { pos.x + uu * 0.4f, ty }, isCurrent ? Color::GoldBright : (npc.templated ? Color::TextFaint : Color::Text), label.c_str());
+					W::SmallText(list, { pos.x + width - rightSize.x - uu * 0.5f, ty + uu * 0.1f }, Color::TextFaint, right.c_str(), 0.8f);
+					if (im::IsItemHovered() && npc.templated) {
+						W::Tooltip("This NPC takes its face from a template: the game shows the template's FaceGen, not this one");
+					}
+					im::PopID();
+				}
+			}
+			ImGuiMCP::ImGuiListClipperManager::End(clipper);
+			ImGuiMCP::ImGuiListClipperManager::Destroy(clipper);
+			im::EndChild();
+			im::EndPopup();
 		}
 
 		void RenderSidePanel(Model& a_model)
@@ -2403,8 +2564,14 @@ namespace RMA::UI
 				}
 				return;
 			}
+			// The key that closed the console (or ran showracemenu) reaches the
+			// window again as it takes the input back; acting on it reopened the
+			// console at once. Only a press made while the window was already
+			// open counts.
 			if (im::IsKeyPressed(ImGuiMCP::ImGuiKey_GraveAccent, false)) {
-				Bridge::OpenConsole();
+				if (Text::Now() - s.openedAt > 0.5) {
+					Bridge::OpenConsole();
+				}
 				return;
 			}
 			if (popup) {
@@ -2534,6 +2701,7 @@ namespace RMA::UI
 					s.window->IsOpen = false;
 				} else if (!open && want) {
 					s.window->IsOpen = true;
+					s.openedAt = Text::Now();
 				}
 			}
 

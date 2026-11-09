@@ -1,5 +1,7 @@
 #include "Bridge.h"
 
+#include "FaceExport.h"
+
 #include <nlohmann/json.hpp>
 
 namespace RMA::Bridge
@@ -1355,6 +1357,12 @@ namespace RMA::Bridge
 				Status("BodySlide export failed");
 			}
 		});
+	}
+
+	void ExportNPCFace(const std::string& a_npc)
+	{
+		Status("Writing FaceGen...");
+		FaceExport::Start(a_npc, [](std::string a_text) { Status(std::move(a_text)); });
 	}
 
 	// Every SliderPresets xml BodySlide would show, read off the game thread;

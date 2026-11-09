@@ -1,4 +1,4 @@
-RaceMenu Atelier 1.1.0
+RaceMenu Atelier 1.2.0
 ======================
 
 A native interface for RaceMenu, built on SKSE Menu Framework.
@@ -36,6 +36,19 @@ BodySlide slider preset (CBBE 3BA, HIMBO or UBE) and imports any BodySlide slide
 preset onto the character's RaceMenu sliders. Small/big values are blended by the
 character's weight; import is one undo step. Build the body in BodySlide with zeroed
 sliders, as for OBody.
+
+FaceGen for NPC
+---------------
+Tools > FaceGen for NPC writes the face of your character as the pre-built head
+(FaceGen) of any NPC you pick from a list, plus a JSON with the face's record data.
+No Creation Kit needed. Two xEdit scripts (docs\RaceMenu Atelier - xEdit Scripts,
+copy all three .pas files into xEdit's "Edit Scripts" folder) finish the job:
+- Atelier - Apply NPC Appearance: writes head parts, hair colour, skin, tint layers,
+  face sliders, height and weight into the NPC record.
+- Atelier - Build NPC Mod: builds a self-contained mod - copies the head parts and
+  every file they need, writes the face, copies the FaceGen, writes a manifest.
+Full guide: docs\RaceMenu Atelier - FaceGen for NPC Guide (EN).md (Russian: (RU).md).
+xEdit 4.1.5 or newer.
 
 Settings
 --------

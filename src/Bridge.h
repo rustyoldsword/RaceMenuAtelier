@@ -47,6 +47,7 @@ namespace RMA::Bridge
 	void ReadPresetInfo(const std::string& a_relativePath);
 	void ExportBodySlide(Body a_body, bool a_male, const std::string& a_name, std::vector<std::pair<std::string, double>> a_sliders);
 	void ListBodySlidePresets();
+	void ExportNPCFace(const std::string& a_npc);  // "FaceGen for NPC": the player's face onto an NPC record
 	[[nodiscard]] float PlayerWeight();  // 0..100, read live for BodySlide's small/big blend
 
 	// modes

@@ -8,7 +8,7 @@ param([switch]$NoArchive)
 $ErrorActionPreference = 'Stop'
 
 $root    = Split-Path -Parent $PSScriptRoot
-$version = '1.1.0'
+$version = '1.2.0'
 $stage   = Join-Path $root 'dist\RaceMenu Atelier'
 $archive = Join-Path $root "dist\RaceMenu Atelier $version.7z"
 $dll     = Join-Path $root 'build\windows\x64\releasedbg\RaceMenuAtelier.dll'
@@ -21,13 +21,18 @@ New-Item -ItemType Directory -Force "$stage\SKSE\Plugins", "$stage\docs" | Out-N
 Copy-Item $dll "$stage\SKSE\Plugins\"
 Copy-Item (Join-Path $root 'dist_template\SKSE\Plugins\RaceMenuAtelier.ini') "$stage\SKSE\Plugins\"
 Copy-Item (Join-Path $root 'dist_template\docs\RaceMenu Atelier__README.txt') "$stage\docs\"
+# FaceGen for NPC: the guide and the three xEdit scripts
+Copy-Item (Join-Path $root 'docs\FaceGen for NPC - Guide (EN).md') "$stage\docs\RaceMenu Atelier - FaceGen for NPC Guide (EN).md"
+Copy-Item (Join-Path $root 'docs\FaceGen for NPC - Guide (RU).md') "$stage\docs\RaceMenu Atelier - FaceGen for NPC Guide (RU).md"
+New-Item -ItemType Directory -Force "$stage\docs\RaceMenu Atelier - xEdit Scripts" | Out-Null
+Copy-Item (Join-Path $root 'xEdit\Edit Scripts\*.pas') "$stage\docs\RaceMenu Atelier - xEdit Scripts\"
 # icons: tools\slice_icons.py writes 49 pictures x 5 sizes
 Copy-Item (Join-Path $root 'dist_template\Interface') $stage -Recurse
 $icons = Get-ChildItem "$stage\Interface\RaceMenuAtelier\icons" -File -Filter *.png
 if ($icons.Count -ne 245) { throw "expected 245 icon files, staged $($icons.Count) - run python tools\slice_icons.py" }
 
 $files = Get-ChildItem $stage -Recurse -File
-if ($files.Count -ne 248) { throw "expected 248 files, staged $($files.Count)" }
+if ($files.Count -ne 253) { throw "expected 253 files, staged $($files.Count)" }
 $files | Where-Object { $_.Extension -ne '.png' } | Select-Object @{ n = 'file'; e = { $_.FullName.Substring($stage.Length) } }, Length | Format-Table -AutoSize | Out-String -Width 200
 "plus $($icons.Count) icons"
 
