@@ -146,7 +146,10 @@ needs nothing else.
 
 ### Run it
 
-1. Start xEdit (under MO2, from MO2) with your load order.
+1. Start xEdit (under MO2, from MO2) with your load order. Every plugin the face's head parts come
+   from must be loaded: the hair mod, the eyes mod, High Poly Head and so on. Loading the whole
+   list is the simplest way. When xEdit asks to add plugins to yours as masters while it copies,
+   answer **Yes**: unused masters are removed again at the end.
 2. Select the NPC record or records the faces were exported for, right-click,
    **Apply Script...**, choose **Atelier - Build NPC Mod**.
 3. Answer four questions:
@@ -160,6 +163,12 @@ needs nothing else.
 
 4. When it finishes, the messages show the summary: records copied, files copied, base-game files
    left out, files missing, and the manifest path.
+   Under MO2 the script moves the in-game head and tint export out of Overwrite into the built
+   mod's `SKSE\Plugins\RaceMenuAtelier\Builds\source\` (lines `moved the in-game export out of
+   Overwrite`): Overwrite wins over every mod, and the unconverted export, with the original part
+   names, would give the NPC a dark face. The JSON stays in Overwrite. A later run reads the head
+   from that folder when there is no newer export. When another enabled mod has the same FaceGen
+   file, the messages say `note: ... is also in the mod`: your mod must win over it.
 5. **On exit, when xEdit asks which plugins to save, untick the new plugin.** It is already saved
    in the output folder. If you save it, an identical copy also lands in Overwrite. A plugin that
    already existed is saved by xEdit as usual, so tick that one.
@@ -242,7 +251,7 @@ Put `Atelier - Build NPC Mod.json` next to the script to preset the answers, or 
 
 | Problem | Cause and fix |
 |---|---|
-| **Dark or grey face** | The FaceGen head does not match the record. Each head shape must be named after a head part the NPC really has, and the files must sit at `<plugin>\<id>` of the NPC's defining plugin. Re-export, run the script again, and check that the FaceGen files won in MO2 (Overwrite or your mod, not an older copy). |
+| **Dark or grey face** | The FaceGen head does not match the record. Each head shape must be named after a head part the NPC really has, and the files must sit at `<plugin>\<id>` of the NPC's defining plugin. Re-export, run the script again, and check that the FaceGen files won in MO2 (Overwrite or your mod, not an older copy). Before 1.2.1, Build left the in-game export in Overwrite, where it hid the built head: move `meshes\...\FaceGeom\<plugin>\<id>.nif` and the `.dds` out of Overwrite. Since 1.2.1 Build does this itself. |
 | **White hair** | Old Atelier builds before 1.2.0 did not bake the hair colour. Export again. |
 | Export: `... already exists and was not written by this tool` | A mod ships FaceGen for that NPC. Move that file out of its mod (or hide it in MO2), then export. |
 | Export: `That NPC was created at runtime` | Pick an NPC defined in a plugin. |
@@ -253,6 +262,8 @@ Put `Atelier - Build NPC Mod.json` next to the script to preset the answers, or 
 | Build note: `FaceGen shape X is not a head part of the NPC` | The face was exported with different head parts than the record now has. Export again, then build again. |
 | Build: entries in `missing` | A record or mesh names a file nobody provides (often a broken path in the source mod). Find the file or fix the path. |
 | Atelier will not overwrite a built NPC's FaceGen | That FaceGen came from Build and has no Atelier JSON for the new NPC. Export to the original NPC and build again, or delete the built FaceGen files first. |
+| The script's dialogs show Chinese-looking characters and the build is cancelled with an empty prefix | The scripts from 1.2.0: xEdit 4.1.5's own input box is broken. Use the scripts from 1.2.1 or newer. |
+| Apply or Build: `head part ... not found (created at runtime or plugin not loaded)` | The plugin of that head part is not loaded in this xEdit session. Load it (or the whole list) and run the script again. |
 | A new plugin shows no records in game | An empty plugin of the same name in Overwrite hides it. Delete it from Overwrite (see step 5 of "Run it"). |
 
 ---

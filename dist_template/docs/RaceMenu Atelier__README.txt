@@ -1,4 +1,4 @@
-RaceMenu Atelier 1.2.0
+RaceMenu Atelier 1.2.1
 ======================
 
 A native interface for RaceMenu, built on SKSE Menu Framework.

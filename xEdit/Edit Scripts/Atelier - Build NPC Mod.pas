@@ -72,7 +72,7 @@ var
   Assets: TStringList;    // destination Data path = source Data path
   OwnSeen: TStringList;   // records of the target plugin already queued
   ModList: TStringList;   // enabled MO2 mods, highest priority first
-  RecordsLog, NpcLog, GameFiles, Missing, Notes: TStringList;
+  RecordsLog, NpcLog, GameFiles, Missing, Notes, ParkedLog: TStringList;
   Manifest: TJsonObject;
 
 // -------------------------------------------------------------------------
@@ -471,6 +471,58 @@ end;
 // -------------------------------------------------------------------------
 // FaceGen
 
+const
+  ParkedFolder = 'SKSE\Plugins\RaceMenuAtelier\Builds\source\';
+
+// Moves an exported FaceGen file from MO2's Overwrite into the built mod's
+// ParkedFolder, which the game never reads. The NPC's .json stays in Overwrite.
+procedure ParkExport(aRel: string);
+var
+  src, dst: string;
+begin
+  if (OptMO2 = '') or (OverwriteDir = '') then
+    Exit;
+  src := OverwriteDir + aRel;
+  if not FileExists(src) then
+    Exit;
+  if SameText(AddSlash(OptOut), OverwriteDir) then
+    Exit;
+  dst := OptOut + ParkedFolder + aRel;
+  ForceDirectories(ExtractFilePath(dst));
+  if FileExists(dst) then
+    DeleteFile(dst);
+  if RenameFile(src, dst) then
+    ParkedLog.Add('Overwrite\' + aRel + ' -> ' + dst)
+  else
+    Notes.Add('could not move Overwrite\' + aRel + ' - move it out of Overwrite by hand, or it hides the built face');
+end;
+
+// Another enabled mod with the same FaceGen path may win over the built mod.
+procedure WarnOtherProviders(aRel: string);
+var
+  i: Integer;
+  own: string;
+begin
+  if OptMO2 = '' then
+    Exit;
+  own := ExtractFileName(NoSlash(OptOut));
+  for i := 0 to Pred(ModList.Count) do
+    if (not SameText(ModList[i], own)) and FileExists(ModsDir + ModList[i] + '\' + aRel) then
+      Notes.Add(aRel + ' is also in the mod "' + ModList[i] + '": the built mod "' + own +
+        '" must win over it in MO2, or the face will be wrong');
+end;
+
+// The parked copy of an export (see ParkExport), when no newer export is in
+// Overwrite. A later run reads it, so the build stays repeatable after the move.
+function ParkedExport(aRel: string): string;
+begin
+  Result := '';
+  if (OverwriteDir <> '') and FileExists(OverwriteDir + aRel) then
+    Exit;
+  if FileExists(OptOut + ParkedFolder + aRel) then
+    Result := OptOut + ParkedFolder + aRel;
+end;
+
 procedure CopyFaceGen(aDoc: TJsonObject; aNpc: IInterface; aLog: TJsonObject);
 var
   nif: TwbNifFile;
@@ -480,7 +532,7 @@ var
   expected, shapes: TStringList;
   hp: IInterface;
   i, j: Integer;
-  srcNif, srcTint, dstNif, dstTint, s, newName: string;
+  srcNif, srcTint, dstNif, dstTint, s, newName, parkedNif, parkedTint: string;
 begin
   srcNif := FaceGeomFolder + aDoc.O['npc'].S['plugin'] + '\' + aDoc.O['npc'].S['formID'] + '.nif';
   srcTint := FaceTintFolder + aDoc.O['npc'].S['plugin'] + '\' + aDoc.O['npc'].S['formID'] + '.dds';
@@ -488,7 +540,9 @@ begin
   dstTint := FaceTintFolder + GetFileName(GetFile(MasterOrSelf(aNpc))) + '\' + LocalHex(aNpc) + '.dds';
   aLog.S['faceGeom'] := dstNif;
   aLog.S['faceTint'] := dstTint;
-  if not ResourceExists(srcNif) then begin
+  parkedNif := ParkedExport(srcNif);
+  parkedTint := ParkedExport(srcTint);
+  if (parkedNif = '') and not ResourceExists(srcNif) then begin
     Missing.Add(srcNif + '  (FaceGen head of ' + Name(aNpc) + ')');
     Exit;
   end;
@@ -501,7 +555,10 @@ begin
     for i := 0 to Pred(ElementCount(hp)) do
       CollectPartEdids(LinksTo(ElementByIndex(hp, i)), expected);
 
-    nif.LoadFromResource(srcNif);
+    if parkedNif <> '' then
+      nif.LoadFromFile(parkedNif)
+    else
+      nif.LoadFromResource(srcNif);
     for i := 0 to Pred(nif.BlocksCount) do begin
       b := nif.Blocks[i];
       if (b.BlockType = 'BSDynamicTriShape') or (b.BlockType = 'BSTriShape') or (b.BlockType = 'NiTriShape') then begin
@@ -538,7 +595,11 @@ begin
     shapes.Free;
   end;
 
-  if ResourceExists(srcTint) then begin
+  if parkedTint <> '' then begin
+    ForceDirectories(ExtractFilePath(OptOut + dstTint));
+    if not CopyFile(PChar(parkedTint), PChar(OptOut + dstTint), False) then
+      Missing.Add(parkedTint + '  (face tint of ' + Name(aNpc) + ', could not copy)');
+  end else if ResourceExists(srcTint) then begin
     bs := TBytesStream.Create(ResourceOpenData('', srcTint));
     try
       ForceDirectories(ExtractFilePath(OptOut + dstTint));
@@ -548,6 +609,14 @@ begin
     end;
   end else
     Missing.Add(srcTint + '  (face tint of ' + Name(aNpc) + ')');
+
+  // The in-game export stays in Overwrite, which wins over every mod: the
+  // unconverted head (original part names) would hide the built one and the
+  // NPC would get a dark face. Move it into the built mod, out of the game's way.
+  ParkExport(srcNif);
+  ParkExport(srcTint);
+  WarnOtherProviders(dstNif);
+  WarnOtherProviders(dstTint);
 end;
 
 // -------------------------------------------------------------------------
@@ -786,6 +855,56 @@ end;
 
 // -------------------------------------------------------------------------
 
+// xEdit 4.1.5f's InputQuery adapter is broken: it shows the default value as
+// garbage (its bytes read as UTF-16) and hands back an empty string even after OK.
+// A plain form with a TEdit returns what was typed. Returns False on Cancel.
+function AskText(aPrompt: string; var aValue: string): Boolean;
+var
+  frm: TForm;
+  lbl: TLabel;
+  ed: TEdit;
+  btnOk, btnCancel: TButton;
+begin
+  frm := TForm.Create(nil);
+  try
+    frm.Caption := 'Atelier - Build NPC Mod';
+    frm.Width := 640;
+    frm.Height := 150;
+    frm.Position := poScreenCenter;
+    frm.BorderStyle := bsDialog;
+    lbl := TLabel.Create(frm);
+    lbl.Parent := frm;
+    lbl.Left := 12;
+    lbl.Top := 12;
+    lbl.Caption := aPrompt;
+    ed := TEdit.Create(frm);
+    ed.Parent := frm;
+    ed.Left := 12;
+    ed.Top := 34;
+    ed.Width := 600;
+    ed.Text := aValue;
+    btnOk := TButton.Create(frm);
+    btnOk.Parent := frm;
+    btnOk.Caption := 'OK';
+    btnOk.ModalResult := mrOk;
+    btnOk.Default := True;
+    btnOk.Left := 456;
+    btnOk.Top := 70;
+    btnCancel := TButton.Create(frm);
+    btnCancel.Parent := frm;
+    btnCancel.Caption := 'Cancel';
+    btnCancel.ModalResult := mrCancel;
+    btnCancel.Cancel := True;
+    btnCancel.Left := 537;
+    btnCancel.Top := 70;
+    Result := frm.ShowModal = mrOk;
+    if Result then
+      aValue := Trim(ed.Text);
+  finally
+    frm.Free;
+  end;
+end;
+
 function ReadOptions: Boolean;
 var
   opt: TJsonObject;
@@ -817,7 +936,7 @@ begin
   end;
 
   if interactive then begin
-    if not InputQuery('Atelier - Build NPC Mod', 'Plugin (a new ESL-flagged .esp, or a loaded plugin to add to):', OptPlugin) then
+    if not AskText('Plugin (a new ESL-flagged .esp, or a loaded plugin to add to):', OptPlugin) then
       Exit;
   end;
   if ExtractFileExt(OptPlugin) = '' then
@@ -825,7 +944,7 @@ begin
   if OptPrefix = '' then
     OptPrefix := DefaultPrefix(OptPlugin);
   if interactive then begin
-    if not InputQuery('Atelier - Build NPC Mod', 'EditorID prefix for the copies (letters, digits, _):', OptPrefix) then
+    if not AskText('EditorID prefix for the copies (letters, digits, _):', OptPrefix) then
       Exit;
   end;
   if not ValidPrefix(OptPrefix) then begin
@@ -841,7 +960,7 @@ begin
       OptOut := ScriptsPath + 'Atelier builds\' + ChangeFileExt(OptPlugin, '');
   end;
   if interactive then begin
-    if not InputQuery('Atelier - Build NPC Mod', 'Output folder (the new mod''s folder; it is created if missing):', OptOut) then
+    if not AskText('Output folder (the new mod''s folder; it is created if missing):', OptOut) then
       Exit;
   end;
   OptOut := AddSlash(Trim(OptOut));
@@ -869,6 +988,7 @@ begin
   OwnSeen := TStringList.Create;
   RecordsLog := TStringList.Create;
   NpcLog := TStringList.Create;
+  ParkedLog := TStringList.Create;
   GameFiles := NewSet;
   Missing := NewSet;
   Notes := TStringList.Create;
@@ -998,6 +1118,8 @@ begin
       [RecordsLog.Count, Manifest.A['files'].Count, GameFiles.Count, Missing.Count]));
     for i := 0 to Pred(Missing.Count) do
       AddMessage('  MISSING ' + Missing[i]);
+    for i := 0 to Pred(ParkedLog.Count) do
+      AddMessage('  moved the in-game export out of Overwrite: ' + ParkedLog[i]);
     for i := 0 to Pred(Notes.Count) do
       AddMessage('  note: ' + Notes[i]);
     AddMessage('  manifest: ' + mpath);
@@ -1014,6 +1136,7 @@ begin
     OwnSeen.Free;
     RecordsLog.Free;
     NpcLog.Free;
+    ParkedLog.Free;
     GameFiles.Free;
     Missing.Free;
     Notes.Free;

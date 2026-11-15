@@ -91,7 +91,7 @@ What is written: PNAM head parts, HCLF hair colour (a new [i]RMA_HairColor_<id>[
 [h2]6b. Route B: build a self-contained mod[/h2]
 Use this when the face uses head parts from other mods, or whenever you want one folder that needs nothing else.
 [h3]Run it[/h3]
-[step]Start xEdit (under MO2, from MO2) with your load order.[/step]
+[step]Start xEdit (under MO2, from MO2) with your load order. Every plugin the face's head parts come from must be loaded: the hair mod, the eyes mod, High Poly Head and so on. Loading the whole list is the simplest way. When xEdit asks to add plugins to yours as masters while it copies, answer [b]Yes[/b]: unused masters are removed again at the end.[/step]
 [step]Select the NPC record or records the faces were exported for, right-click, [b]Apply Script...[/b], choose [b]Atelier - Build NPC Mod[/b].[/step]
 [step]Answer four questions:
 [list]
@@ -101,7 +101,7 @@ Use this when the face uses head parts from other mods, or whenever you want one
 [*][b]New NPC?[/b] [b]Yes[/b]: a new NPC record <prefix>_<EditorID> is created in the plugin from the selected one and gets the face. [b]No[/b]: the selected NPC gets the face, as an override in the plugin when it is defined elsewhere.
 [/list]
 [/step]
-[step]When it finishes, the messages show the summary: records copied, files copied, base-game files left out, files missing, and the manifest path.[/step]
+[step]When it finishes, the messages show the summary: records copied, files copied, base-game files left out, files missing, and the manifest path. Under MO2 the script also moves the in-game head and tint export out of Overwrite into the built mod's SKSE\Plugins\RaceMenuAtelier\Builds\source\ (Overwrite wins over every mod, and the unconverted export would give the NPC a dark face). The JSON stays in Overwrite.[/step]
 [warning]On exit, when xEdit asks which plugins to save, [b]untick the new plugin[/b]. It is already saved in the output folder; if you save it, an identical copy also lands in Overwrite and can hide the real one. A plugin that already existed is saved by xEdit as usual, so tick that one.[/warning]
 [h3]What it does[/h3]
 For every selected NPC with an exported face:
@@ -149,7 +149,7 @@ Put [i]Atelier - Build NPC Mod.json[/i] next to the script to preset the answers
 [hr]
 [h2]7. Troubleshooting[/h2]
 [list]
-[*][b]Dark or grey face.[/b] The FaceGen head does not match the record. Each head shape must be named after a head part the NPC really has, and the files must sit at <plugin>\<id> of the NPC's defining plugin. Export again, run the script again, and check that the FaceGen files won in MO2 (Overwrite or your mod, not an older copy).
+[*][b]Dark or grey face.[/b] The FaceGen head does not match the record. Each head shape must be named after a head part the NPC really has, and the files must sit at <plugin>\<id> of the NPC's defining plugin. Export again, run the script again, and check that the FaceGen files won in MO2 (Overwrite or your mod, not an older copy). Before 1.2.1, Build left the in-game export in Overwrite, where it hid the built head: move the .nif and .dds of that NPC out of Overwrite. Since 1.2.1 Build does this itself.
 [*][b]White hair.[/b] Builds before 1.2.0 did not bake the hair colour. Export again.
 [*][b]Export: "... already exists and was not written by this tool".[/b] A mod ships FaceGen for that NPC. Move that file out of its mod (or hide it in MO2), then export.
 [*][b]Export: "That NPC was created at runtime".[/b] Pick an NPC defined in a plugin.
@@ -160,6 +160,8 @@ Put [i]Atelier - Build NPC Mod.json[/i] next to the script to preset the answers
 [*][b]Build note: "FaceGen shape X is not a head part of the NPC".[/b] The face was exported with different head parts than the record now has. Export again, then build again.
 [*][b]Build: entries in "missing".[/b] A record or mesh names a file nobody provides (often a broken path in the source mod). Find the file or fix the path.
 [*][b]Atelier will not overwrite a built NPC's FaceGen.[/b] That FaceGen came from Build and has no Atelier JSON for the new NPC. Export to the original NPC and build again, or delete the built FaceGen files first.
+[*][b]The script's dialogs show Chinese-looking characters and the build is cancelled with an empty prefix.[/b] The scripts from 1.2.0: xEdit 4.1.5's own input box is broken. Use the scripts from 1.2.1 or newer.
+[*][b]Apply or Build: "head part ... not found (created at runtime or plugin not loaded)".[/b] The plugin of that head part is not loaded in this xEdit session. Load it (or the whole list) and run the script again.
 [*][b]A new plugin shows no records in game.[/b] An empty plugin of the same name in Overwrite hides it. Delete it from Overwrite (see the warning in "Run it").
 [/list]
 [br]
